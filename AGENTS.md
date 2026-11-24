@@ -6,7 +6,9 @@ Proyecto universitario: semáforo inteligente para una intersección en Y de 45 
 Dos carriles de entrada convergen en una salida compartida. Cada carril lleva LEDs
 rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
 
-- ESP32-CAM + OV2640: captura; transmisión Wi-Fi solo en etapas posteriores.
+- ESP32-CAM: captura con OV2640 u OV3660; transmisión Wi-Fi solo en etapas posteriores.
+  El planteamiento inicial indicaba OV2640; la prueba UART del usuario detectó
+  OV3660 (PID 0x3660). Mantener soporte para ambos y registrar el modelo real.
 - Computadora conectada durante la operación: detección de vehículos de juguete,
   asignación a ROI y conteos. Posteriormente envía los conteos por UDP.
 - ESP32-C6: valida mensajes, decide prioridad, ejecuta la máquina de estados y
@@ -36,7 +38,7 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
 
 - Reutilizar `Proyecto_Final_Cam/` (target `esp32`) y `Proyecto_Final_C6/`
   (target `esp32c6`). No crear proyectos duplicados.
-- Práctica 1.1: solo inicialización OV2640 y captura JPEG periódica. No modificar
+- Práctica 1.1: solo inicialización de cámara y captura JPEG periódica. No modificar
   firmware C6 ni agregar Wi-Fi, HTTP, visión, UDP o controlador de semáforos aquí.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,

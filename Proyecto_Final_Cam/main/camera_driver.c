@@ -82,8 +82,11 @@ esp_err_t camera_inicializar(void)
     }
 
     const sensor_t *sensor = esp_camera_sensor_get();
-    if (sensor == NULL || sensor->id.PID != OV2640_PID) {
-        ESP_LOGE(TAG, "Se esperaba OV2640; PID detectado=0x%x",
+    // La placa del usuario reportó OV3660 (0x3660) durante la prueba por UART.
+    // Ambos modelos están soportados por el componente y entregan JPEG QVGA.
+    if (sensor == NULL ||
+        (sensor->id.PID != OV2640_PID && sensor->id.PID != OV3660_PID)) {
+        ESP_LOGE(TAG, "Se esperaba OV2640 u OV3660; PID detectado=0x%x",
                  sensor == NULL ? 0 : (unsigned int)sensor->id.PID);
         const esp_err_t resultado_liberacion = esp_camera_deinit();
         if (resultado_liberacion != ESP_OK) {
@@ -95,7 +98,9 @@ esp_err_t camera_inicializar(void)
 
     camara_inicializada = true;
     imagenes_capturadas = 0;
-    ESP_LOGI(TAG, "OV2640 inicializada: JPEG QVGA 320x240, calidad=12, XCLK=20 MHz, 1 framebuffer en PSRAM.");
+    const char *modelo_sensor = sensor->id.PID == OV3660_PID ? "OV3660" : "OV2640";
+    ESP_LOGI(TAG, "%s inicializada (PID=0x%x): JPEG QVGA 320x240, calidad=12, XCLK=20 MHz, 1 framebuffer en PSRAM.",
+             modelo_sensor, (unsigned int)sensor->id.PID);
     return ESP_OK;
 }
 

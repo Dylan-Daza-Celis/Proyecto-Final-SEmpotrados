@@ -1,13 +1,14 @@
-# Práctica 1.1 — OV2640 y captura JPEG
+# Práctica 1.1 — Cámara OV2640/OV3660 y captura JPEG
 
-Inicializa la OV2640 y adquiere una imagen QVGA por intento. Imprime contador,
+Inicializa una OV2640 u OV3660 y adquiere una imagen QVGA por intento. Imprime contador,
 resolución, formato, tamaño y memoria; devuelve el framebuffer al controlador y
 espera 5000 ms antes del siguiente intento. No guarda JPEG ni los envía por UART.
 El monitor muestra metadatos, no una imagen visualizable.
 
 ## Requisitos y dependencias
 
-- ESP32-CAM clásica con OV2640, PSRAM y pinout AI Thinker **por confirmar en la placa**.
+- ESP32-CAM clásica con OV2640 u OV3660, PSRAM y pinout AI Thinker. El usuario
+  confirmó por UART una OV3660 (PID 0x3660); la captura aún debe comprobarse.
 - Base ESP32-CAM-MB CH340G, cable USB de datos y alimentación estable adecuada a
   la base. El UART del ESP32 usa lógica de 3.3 V.
 - VS Code con extensión oficial ESP-IDF; instalación efectiva **ESP-IDF v6.0.2**,
@@ -36,7 +37,7 @@ el componente oficial incluye internamente fuentes C++ de conversión.
 Definido únicamente en `main/camera_pinout.h`. Verificar modelo y conexiones antes
 de alimentar. No confundir el ejemplo WROVER del componente con AI Thinker.
 
-| Señal OV2640 | GPIO ESP32 |
+| Señal de cámara | GPIO ESP32 |
 | --- | --- |
 | PWDN | 32 |
 | RESET | -1 (reinicio por software) |
@@ -60,7 +61,7 @@ de alimentar. No confundir el ejemplo WROVER del componente con AI Thinker.
 | Parámetro | Valor |
 | --- | --- |
 | Target | `esp32` |
-| Sensor esperado | OV2640 (se comprueba PID) |
+| Sensores aceptados | OV2640 (PID 0x26) u OV3660 (PID 0x3660); se registra el modelo real |
 | Resolución / formato | QVGA 320 × 240 / `PIXFORMAT_JPEG` |
 | XCLK / calidad JPEG | 20 MHz / 12 (menor número implica mayor calidad) |
 | Buffers / ubicación | 1 / `CAMERA_FB_IN_PSRAM` |
@@ -122,7 +123,7 @@ Los archivos OpenOCD heredados son para depuración; la prueba actual usa UART.
    puerto en Administrador de dispositivos → Puertos (COM y LPT), y cerrar otras
    terminales que lo estén usando.
 2. Insertar la cámara en la base con la orientación correcta y verificar la cinta
-   OV2640 con la placa sin alimentación.
+   de la cámara con la placa sin alimentación.
 3. Sustituir `COMx` por el puerto real en los comandos siguientes:
 
 ```powershell
@@ -144,7 +145,7 @@ Ejemplo **ilustrativo**, no transcripción de hardware probado; tamaños y memor
 ```text
 I (...) practica_1_1: Práctica 1.1; ESP-IDF v6.0.2; target esp32
 I (...) camera_driver: PSRAM detectada: ... bytes
-I (...) camera_driver: OV2640 inicializada: JPEG QVGA 320x240, calidad=12, XCLK=20 MHz, 1 framebuffer en PSRAM.
+I (...) camera_driver: OV3660 inicializada (PID=0x3660): JPEG QVGA 320x240, calidad=12, XCLK=20 MHz, 1 framebuffer en PSRAM.
 I (...) camera_driver: Imagen #1: 320x240, formato=JPEG (...), tamaño=... bytes
 I (...) camera_driver: RAM interna: libre=..., mínimo=..., bloque mayor=... bytes
 I (...) camera_driver: PSRAM: libre=..., mínimo=..., bloque mayor=... bytes
@@ -158,7 +159,7 @@ no debería existir una caída sostenida por cada captura. El mínimo histórico
 disminuir al arrancar sin que eso pruebe una fuga.
 
 Si falla una captura, debe aparecer error y aviso de reintento con espera de 5000 ms;
-no aumenta el contador. Ante PSRAM ausente, sensor distinto o fallo de inicio, se
+no aumenta el contador. Ante PSRAM ausente, sensor no admitido o fallo de inicio, se
 debe informar la causa/código y no aparecer ninguna línea `Imagen #`.
 No desconectar el sensor en caliente para provocar fallos.
 
@@ -167,8 +168,9 @@ No desconectar el sensor en caliente para provocar fallos.
 - `app_main()` registra versión/memoria, comprueba inicialización y ejecuta el bucle
   en su propia tarea FreeRTOS. No necesita otra tarea, cola ni temporizador en 1.1.
 - `camera_inicializar()` verifica PSRAM, prepara `camera_config_t`, comprueba
-  `esp_camera_init()` y valida que el sensor detectado sea OV2640. Ante otro sensor
-  libera el controlador e informa el error. No continúa capturando tras un fallo.
+  `esp_camera_init()` y valida que el sensor sea OV2640 u OV3660. Registra su modelo
+  real; ante otro sensor libera el controlador e informa el error. No continúa
+  capturando tras un fallo.
 - `camera_capturar_registrar()` exige inicialización, obtiene un framebuffer,
   comprueba metadatos y registra una captura correcta. Usa un único punto de
   `esp_camera_fb_return()` para todos los buffers adquiridos, incluso descartados.
@@ -186,6 +188,11 @@ No desconectar el sensor en caliente para provocar fallos.
 | Target incorrecto | Ejecutar `idf.py set-target esp32` dentro de cámara |
 | PSRAM ausente o error de prueba de memoria | Confirmar variante física y opciones generadas, alimentación y montaje; no asumir que toda ESP32-CAM lleva PSRAM funcional |
 | `Camera probe failed` / sensor no detectado | Revisar cinta, cierre del conector, orientación, modelo y pinout con placa apagada |
+| `Se esperaba OV2640; PID detectado=0x3660` | Versión inicial que solo aceptaba OV2640. La placa reporta OV3660; recompilar y programar la versión corregida que acepta ambos modelos |
+| `ov3640: Mismatch PID=0x3660` seguido de `Detected OV3660 camera` | Es el intento de identificación de otro modelo dentro del componente; la detección posterior de OV3660 es la relevante |
+| `Virtual address not enough ... 4MB is mapped` con prueba de PSRAM correcta | Se detectan 8 MiB físicos pero solo se mapean 4 MiB al heap. En el registro aportado hay memoria suficiente para el framebuffer QVGA; no causó la detención |
+| Flash detectada de 4096k y cabecera de 2048k | El firmware utiliza un límite de 2 MiB sobre flash física de 4 MiB. La partición actual cabe; no causó la detención. Para usar toda la flash seleccionar 4 MB en `idf.py menuconfig` → Serial flasher config → Flash size y recompilar/programar |
+| Aviso GDB `COMx`, seguido de uso del nombre extendido de COM12 | El monitor adapta el nombre del puerto para Windows; si llegan los registros, no es un fallo de conexión |
 | `ESP_ERR_NO_MEM` | Consultar memoria/bloque mayor, defaults PSRAM y framebuffer único; no aumentar resolución |
 | Timeout/imagen descartada | Revisar alimentación, cinta, pinout y XCLK; el bucle reintenta sin perder el buffer adquirido |
 | Brownout o reinicios | Corregir fuente, cable y conexiones; mantener detector habilitado |
@@ -195,7 +202,8 @@ No desconectar el sensor en caliente para provocar fallos.
 
 ## Validación registrada
 
-Verificación del **24 de noviembre de 2026**:
+Verificación inicial del **24 de noviembre de 2026** (versión `9d079b5`, anterior
+a la corrección de aceptación de OV3660):
 
 | Comprobación | Resultado real |
 | --- | --- |
@@ -207,7 +215,9 @@ Verificación del **24 de noviembre de 2026**:
 | `idf.py build` | Código 0; `Project build complete` |
 | Binario de aplicación | `build/Proyecto_Final_Cam.bin`: 306688 bytes (0x4ae00); 71 % libre en partición de 1 MiB |
 | Revisión de cambios | `git diff --check` sin errores; C6 sin modificaciones |
-| Programación UART y captura física | **Pendientes de ejecución por el usuario** |
+| Programación UART | El usuario aportó escritura verificada por hash y arranque por COM12 |
+| Prueba de memoria y detección | PSRAM pasó la prueba; el componente detectó e inicializó OV3660 |
+| Captura física | Detenida por validación exclusiva de OV2640; pendiente con la corrección |
 
 La primera descarga falló por la restricción de red del entorno aislado; se repitió
 con acceso autorizado al registro y el gestor resolvió las dependencias. Para usar
@@ -218,15 +228,47 @@ un aviso de símbolos ROM para GDB por una variable inicialmente ausente. Se ind
 la ruta ROM instalada en el proceso de compilación; la construcción final terminó
 correctamente. No hubo errores de compilación en las fuentes de esta práctica.
 
+### Corrección a partir del registro del usuario
+
+El log aportado confirma ESP32-D0WD-V3, flash física de 4 MiB y PSRAM de 8 MiB
+con 4 MiB mapeados. El componente informó `Detected OV3660 camera` y `cam config ok`.
+Después, la aplicación rechazó PID 0x3660 al exigir OV2640; ese rechazo produjo
+`ESP_ERR_NOT_SUPPORTED (0x106)` y el retorno de `app_main()`.
+
+Se mantienen las comprobaciones y se admiten explícitamente **OV2640 y OV3660**,
+ambas soportadas por esp32-camera 2.1.9. El mensaje de inicialización muestra el
+modelo detectado en lugar de anunciar siempre OV2640. La configuración de captura
+no cambia. Los demás modelos siguen rechazándose.
+
+La corrección se recompiló con **ESP-IDF v6.0.2**, target `esp32`: `idf.py build`
+terminó con código 0 y `Project build complete`. El binario corregido ocupa
+**306752 bytes (0x4ae40)** y conserva 71 % libre en la partición. Se verificó que
+`CONFIG_OV2640_SUPPORT` y `CONFIG_OV3660_SUPPORT` están habilitados. El bloqueo de
+dependencias, los defaults y el firmware C6 permanecen sin cambios. La captura en
+hardware con este binario sigue pendiente de la prueba del usuario.
+
+Para probar la corrección, salir del monitor con `Ctrl+]` y ejecutar desde la
+terminal ESP-IDF de `Proyecto_Final_Cam`:
+
+```powershell
+idf.py build
+idf.py -p COM12 -b 115200 flash
+idf.py -p COM12 monitor
+```
+
+Debe aparecer `OV3660 inicializada (PID=0x3660)` y después `Imagen #1`, `Imagen #2`,
+etc. Esta salida es **esperada**, aún no comprobada en hardware con la corrección.
+No hace falta repetir `set-target` para este cambio de código.
+
 ## Criterios de aceptación
 
 | Criterio | Evidencia / límite |
 | --- | --- |
 | Estructura existente, ESP-IDF nativo y target esp32 | Proyectos conservados; CMake y compilación verificados |
 | Dependencia oficial reproducible | Manifiesto fijo y bloqueo generado incluidos |
-| OV2640, JPEG QVGA y configuración solicitada | Implementación compilada; confirmación en placa pendiente |
-| Registro de capturas y manejo de errores | Ramas de inicio/captura implementadas; monitor físico pendiente |
+| OV2640/OV3660, JPEG QVGA y configuración solicitada | Sensor OV3660 identificado por el usuario; captura con corrección pendiente |
+| Registro de capturas y manejo de errores | El registro confirma parada ante sensor rechazado; capturas tras corregir pendientes |
 | Devolución de framebuffers | Un único retorno común para cada adquisición no nula, incluso descartadas |
 | Documentación reproducible | Pinout, PSRAM, compilación, UART, monitor y diagnóstico en esta guía |
 | Alcance 1.1 | Sin funciones de etapas posteriores ni cambios en C6 |
-| Separación entre compilación y funcionamiento físico | Compilación exitosa; no se flasheó ni se probó hardware |
+| Separación entre compilación y funcionamiento físico | Usuario confirmó programación/arranque de versión inicial; capturas con corrección pendientes |

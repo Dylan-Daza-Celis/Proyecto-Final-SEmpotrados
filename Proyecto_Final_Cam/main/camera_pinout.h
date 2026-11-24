@@ -1,6 +1,7 @@
 #pragma once
 
-// Pinout inicial AI Thinker con OV2640: verificar contra la placa adquirida.
+// Pinout inicial AI Thinker: verificar contra la placa adquirida.
+// La placa del usuario detectó OV3660 usando estas conexiones por SCCB.
 // RESET=-1 solicita reinicio por software; GPIO0 se usa como XCLK al ejecutar.
 #define CAMERA_PIN_PWDN   32
 #define CAMERA_PIN_RESET  -1
