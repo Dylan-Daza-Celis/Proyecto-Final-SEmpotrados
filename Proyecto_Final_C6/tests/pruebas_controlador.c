@@ -14,6 +14,12 @@ static int escribir(int pin, int nivel)
     if (++llamadas==fallar_en) return -1;
     niveles[pin]=nivel;
     assert(!(niveles[PIN_VERDE_1] && niveles[PIN_VERDE_2]));
+    assert(niveles[PIN_ROJO_1]+niveles[PIN_AMARILLO_1]+niveles[PIN_VERDE_1]<=1);
+    assert(niveles[PIN_ROJO_2]+niveles[PIN_AMARILLO_2]+niveles[PIN_VERDE_2]<=1);
+    if (habilitado) {
+        if (niveles[PIN_VERDE_1]) assert(niveles[PIN_ROJO_2]);
+        if (niveles[PIN_VERDE_2]) assert(niveles[PIN_ROJO_1]);
+    }
     return 0;
 }
 static int habilitar(uint64_t mascara)
@@ -93,19 +99,35 @@ static void pruebas_gpio(void)
     comprobar_rojos(); assert(g.bloqueado);
     assert(!semaforo_gpio_aplicar(&g,(luces_semaforo_t){LUZ_VERDE,LUZ_ROJA}));
     /* Fallar cada escritura de inicialización y aplicación, de una en una. */
-    for (int fallo=1; fallo<=14; ++fallo) {
+    for (int fallo=1; fallo<=6; ++fallo) {
         llamadas=0; fallar_en=fallo; memset(niveles,0,sizeof niveles);
         assert(!semaforo_gpio_iniciar(&g,op));
         assert(g.bloqueado); comprobar_rojos();
     }
     fallar_en=0;
-    for (int fallo=1; fallo<=8; ++fallo) {
+    for (int fallo=1; fallo<=2; ++fallo) {
         llamadas=0; assert(semaforo_gpio_iniciar(&g,op));
         fallar_en=llamadas+fallo;
         assert(!semaforo_gpio_aplicar(&g,(luces_semaforo_t){LUZ_VERDE,LUZ_ROJA}));
         comprobar_rojos(); fallar_en=0;
     }
     habilitar_falla=-1; assert(!semaforo_gpio_iniciar(&g,op)); comprobar_rojos();
+    habilitar_falla=0;
+    for (int desde=0; desde<=ESTADO_SEGURO; ++desde) for (int hasta=0; hasta<=ESTADO_SEGURO; ++hasta) {
+        luces_semaforo_t origen,destino;
+        controlador_luces((estado_semaforo_t)desde,&origen);
+        controlador_luces((estado_semaforo_t)hasta,&destino);
+        assert(semaforo_gpio_iniciar(&g,op)); assert(semaforo_gpio_aplicar(&g,origen));
+        int inicio=llamadas;
+        assert(semaforo_gpio_aplicar(&g,destino));
+        int numero_escrituras=llamadas-inicio;
+        for (int fallo=1; fallo<=numero_escrituras; ++fallo) {
+            assert(semaforo_gpio_iniciar(&g,op)); assert(semaforo_gpio_aplicar(&g,origen));
+            fallar_en=llamadas+fallo;
+            assert(!semaforo_gpio_aplicar(&g,destino)); comprobar_rojos();
+            fallar_en=0;
+        }
+    }
     int pines[]={2,3,10,11,18,19};
     assert(semaforo_pines_validos(pines,valida));
     const int prohibidos[]={2,4,5,8,9,12,13,15,16,17,24,-1};

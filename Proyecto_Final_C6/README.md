@@ -54,9 +54,14 @@ activa. Consulta esp_timer_get_time y solo avanza **una fase** por actualizació
 Tras aplicar GPIO fija de nuevo el inicio real de la fase: un retraso de
 planificación prolonga la fase, nunca recorta amarillo/rojo para recuperar tiempo.
 
+La revisión de GPIO conserva el rojo contrario y solo escribe niveles que cambian.
+Apaga luces incompatibles, asegura primero los rojos necesarios, retira el rojo
+del carril que abre y luego habilita su amarillo/verde. Las pruebas revisan cada
+escritura y fallos en todas las transiciones entre estados.
+
 Al iniciar se precargan registros con verdes/amarillos bajos y rojos altos antes
 de habilitar salidas. En cada cambio se apagan primero ambos verdes, luego el
-resto, y se enciende la luz deseada por carril. Hay un intervalo breve apagado
+resto incompatible, y se enciende la luz deseada por carril sin quitar el rojo contrario. Hay un intervalo breve apagado
 durante las escrituras; en los estados estables cada semáforo tiene exactamente
 una luz y nunca ambos verdes. No hay escrituras atómicas de seis pines.
 
