@@ -1,5 +1,10 @@
 # Tarea 04 — YOLO11x y ocupación vehicular por ROI
 
+La [tarea 06 A](DIAGNOSTICO06.md) incorpora diagnóstico visual offline y comparación
+cb305f7/75f1a0e/actual/predict convencional, barrido A–E, estabilidad por repetición
+y referencia ROI posterior a V. 69 pruebas correctas. No se declara corregida una
+pérdida de precisión sin verdad manual y escenas que la reproduzcan.
+
 La [tarea 05 A](OPTIMIZACION.md) añade benchmark sostenido, calentamiento inicial,
 hilos configurables y motores CPU FP32. PyTorch sigue como referencia; 65 pruebas
 automatizadas. S admite referencias históricas pausadas, sin habilitar control.

@@ -109,6 +109,12 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   Entorno opcional separado solo con instalación explícita. Mantener referencia
   PyTorch y selección pendiente sin verdad final. S pausada guarda referencia
   histórica sin validez de control. Rama feat/yolo11x-inference-optimization.
+- Tarea 06 A: diagnosticar pérdida reportada comparando cb305f7/75f1a0e/actual y
+  predict convencional sobre mismos JPEG/pesos/entorno; conservar PyTorch FP32.
+  Barrido A-E y NMS por separado, sin cambiar config local ni inventar verdad.
+  Preservar repeticiones por imagen y medir estabilidad; declarar variables de hilos.
+  Tras V exigir captura válida iniciada después, antes de congelar referencia ROI.
+  Desconexión/época nueva bloquea confirmación; ambas ROI y G siguen obligatorios.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.

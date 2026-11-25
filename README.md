@@ -1,5 +1,9 @@
 # Semáforo inteligente — Sistemas Empotrados
 
+Tarea 06 A: [diagnóstico neuronal](Vision_Artificial/DIAGNOSTICO06.md), comparación
+entre versiones y umbrales sobre los mismos JPEG; 69 pruebas Python. Los cambios
+de prioridad C6 se revisan en una rama independiente, sin comunicación UDP.
+
 Tarea 05 A: [optimización y comparación de YOLO11x](Vision_Artificial/OPTIMIZACION.md).
 Se conservan pesos, SVGA y parámetros locales; PyTorch continúa como referencia.
 Benchmark reproducible de hilos/ONNX, calentamiento y 65 pruebas de visión. La

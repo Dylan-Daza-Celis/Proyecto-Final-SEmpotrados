@@ -46,6 +46,8 @@ def recursos():
 def ejecutar(args):
     config = cargar_configuracion(args.config, requiere_url=False)
     parametros = config['detector'] | {'backend': args.backend}
+    if args.normalizar_auxiliares:
+        parametros.update(hilos_interop=1,hilos_opencv=1)
     if args.hilos != 'actual':
         parametros.update(hilos_cpu=int(args.hilos), hilos_interop=1, hilos_opencv=1)
     if args.modelo:
@@ -110,6 +112,7 @@ def main():
     parser.add_argument('--modelo', type=Path)
     parser.add_argument('--hilos', choices=['actual','2','4','6','12'], default='actual')
     parser.add_argument('--matriz', action='store_true', help='Procesos separados: actual, 2, 4, 6 y 12')
+    parser.add_argument('--normalizar-auxiliares',action='store_true',help='Fijar interop y OpenCV a 1 incluso en referencia; comparar solo intraop')
     parser.add_argument('--medidas', type=int, default=20)
     parser.add_argument('--condiciones', required=True, help='Alimentación, aplicaciones activas, ventilación y carga del equipo')
     parser.add_argument('--salida', type=Path, default=RAIZ/'benchmarks/referencia.json')

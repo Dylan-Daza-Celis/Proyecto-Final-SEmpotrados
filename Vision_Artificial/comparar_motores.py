@@ -1,6 +1,7 @@
 """Contrasta informes de benchmark por SHA-256, sin seleccionar por velocidad sola."""
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -29,17 +30,25 @@ def comparar(a,b):
             raise ValueError('Parámetros de detección diferentes: '+clave)
     if a['pesos_sha256']!=b['pesos_sha256']:
         raise ValueError('Pesos diferentes')
-    primeros={s['sha256']:s for s in a['muestras']}
-    segundos={s['sha256']:s for s in b['muestras']}
+    primeros,segundos=defaultdict(list),defaultdict(list)
+    for muestra in a['muestras']: primeros[muestra['sha256']].append(muestra)
+    for muestra in b['muestras']: segundos[muestra['sha256']].append(muestra)
     if set(primeros)!=set(segundos):
         raise ValueError('Se requieren exactamente las mismas fotografías')
     escenas=[]
-    for huella,r in primeros.items():
-        s=segundos[huella]
-        if r['forma_entrada']!=s['forma_entrada']:
+    for huella,repeticiones_a in primeros.items():
+        repeticiones_b=segundos[huella]
+        if len(repeticiones_a)!=len(repeticiones_b):
+            raise ValueError('Distinto número de repeticiones por fotografía')
+        if any(r['forma_entrada']!=s['forma_entrada'] for r,s in zip(repeticiones_a,repeticiones_b)):
             raise ValueError('Formas efectivas distintas; comparación no equivalente')
-        escenas.append(dict(sha256=huella, referencia=r['detecciones'], alternativa=s['detecciones'],
-                            **correspondencias(r['detecciones'],s['detecciones'])))
+        comparaciones=[correspondencias(r['detecciones'],s['detecciones']) for r,s in zip(repeticiones_a,repeticiones_b)]
+        def estabilidad(repeticiones):
+            base=repeticiones[0]['detecciones']
+            return [correspondencias(base,r['detecciones']) for r in repeticiones[1:]]
+        escenas.append(dict(sha256=huella, referencia=repeticiones_a, alternativa=repeticiones_b,
+                            comparaciones=comparaciones, estabilidad_referencia=estabilidad(repeticiones_a),
+                            estabilidad_alternativa=estabilidad(repeticiones_b)))
     evaluacion_a=a.get('evaluacion'); evaluacion_b=b.get('evaluacion')
     if evaluacion_a and evaluacion_b:
         if evaluacion_a['calibracion_sha256']!=evaluacion_b['calibracion_sha256']:
@@ -50,6 +59,7 @@ def comparar(a,b):
             raise ValueError('Verdad manual o escenas de evaluación diferentes')
     return dict(escenas=escenas, evaluacion_referencia=evaluacion_a, evaluacion_alternativa=evaluacion_b,
         tiempos_referencia=a['sostenido'], tiempos_alternativa=b['sostenido'],
+        variables_modificadas=[k for k in set(a['parametros'])|set(b['parametros']) if a['parametros'].get(k)!=b['parametros'].get(k)],
         seleccion_definitiva='PENDIENTE: revisar diferencias individuales y exactitud/MAE en grupos finales independientes; no se selecciona automáticamente')
 
 

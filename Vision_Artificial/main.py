@@ -80,6 +80,9 @@ class Visualizador:
         self.limite_imagen = self.configuracion.get("max_antiguedad_imagen_s", 6.0)
         self.limite_resultado = self.configuracion.get("max_antiguedad_resultado_s", 12.0)
         self.mensaje = "Esperando una fotografia. 1/2: editar ROI sobre imagen pausada."
+        self.invalidada_desde = None
+        self.referencia_recalibracion = None
+        self.epoca_recalibracion = None
 
     def raton(self, evento, x, y, _banderas, _parametro):
         if self.activa is None or self.captura is None:
@@ -113,7 +116,10 @@ class Visualizador:
                 self.trabajador.start()
         elif tecla in (ord("v"), ord("V")):
             self.regiones.invalidar_calibracion()
-            self.mensaje = "Calibracion invalidada. Reconfirmar ambas ROI sobre el encuadre actual."
+            self.invalidada_desde = time.monotonic()
+            self.referencia_recalibracion = None
+            self._pausar(False)
+            self.mensaje = "Calibracion invalidada. Esperar captura nueva valida antes de editar ambas ROI."
         elif tecla in (ord("c"), ord("C")):
             self.mostrar_cajas = not self.mostrar_cajas
         elif tecla in (ord("o"), ord("O")):
@@ -131,6 +137,17 @@ class Visualizador:
             self._pausar(not self.pausa)
             self.mensaje = "Pausada; /status sigue comprobando conexion." if self.pausa else "Visualizacion reanudada."
         elif tecla in (ord("1"), ord("2")):
+            if self.invalidada_desde is not None and self.referencia_recalibracion is None:
+                estado = self.adquisidor.obtener_estado()
+                candidata = estado.captura
+                if (not captura_vigente(estado,candidata,self.limite_imagen) or
+                        candidata.origen_monotonic <= self.invalidada_desde):
+                    self.mensaje = 'Esperar captura valida iniciada despues de V.'
+                    return True
+                self.captura = candidata
+                self.secuencia = estado.secuencia
+                self.referencia_recalibracion = candidata
+                self.epoca_recalibracion = estado.epoca
             if self.captura is None:
                 self.mensaje = "Primero debe recibirse una fotografia."
             else:
@@ -145,6 +162,12 @@ class Visualizador:
             self.mensaje = f"ROI {self.activa} borrada en memoria; seleccione sus vertices."
         elif tecla in (10, 13) and self.activa and self.captura is not None:
             try:
+                if self.invalidada_desde is not None:
+                    estado = self.adquisidor.obtener_estado()
+                    if (self.captura is not self.referencia_recalibracion or
+                        self.captura.origen_monotonic <= self.invalidada_desde or
+                        not estado.conectado or estado.error_captura or estado.epoca!=self.epoca_recalibracion):
+                        raise ValueError('Recalibracion requiere referencia posterior a V y conexion sin fallos; reanudar y repetir V.')
                 alto, ancho = self.captura.imagen.shape[:2]
                 self.regiones.establecer(self.activa, self.borrador, (ancho, alto))
                 self.mensaje = f"ROI {self.activa} confirmada. G guarda ambas; Espacio reanuda."
@@ -157,6 +180,8 @@ class Visualizador:
                 if self.activa is not None:
                     raise ValueError("Confirme el poligono activo con Enter antes de guardar.")
                 self.regiones.guardar(self.ruta_roi)
+                self.invalidada_desde = None
+                self.referencia_recalibracion = None
                 self.mensaje = "ROI guardadas. Recalibre si cambia orientacion, perspectiva o encuadre."
             except (OSError, ValueError) as error:
                 self.mensaje = str(error)
