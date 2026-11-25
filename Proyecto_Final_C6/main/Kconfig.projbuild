@@ -1,0 +1,24 @@
+menu "Semaforos - demostracion autonoma"
+config SEMAFORO_PINOUT_CONFIRMADO
+    bool "He confirmado placa, GPIO y cableado provisional"
+    default n
+config SEMAFORO_SIMULAR_DEMANDA
+    bool "Inyectar demanda simulada (sin modificar tiempos)"
+    default n
+config SEMAFORO_VERDE_1_MS
+    int "Verde carril 1 (ms)"
+    range 1000 60000
+    default 5000
+config SEMAFORO_VERDE_2_MS
+    int "Verde carril 2 (ms)"
+    range 1000 60000
+    default 5000
+config SEMAFORO_AMARILLO_MS
+    int "Amarillo (ms)"
+    range 2000 10000
+    default 2000
+config SEMAFORO_ROJO_TOTAL_MS
+    int "Rojo total (ms)"
+    range 1000 10000
+    default 1000
+endmenu
