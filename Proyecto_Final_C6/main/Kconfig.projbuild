@@ -2,16 +2,49 @@ menu "Semaforos - demostracion autonoma"
 config SEMAFORO_PINOUT_CONFIRMADO
     bool "He confirmado placa, GPIO y cableado provisional"
     default n
+choice SEMAFORO_MODO
+    prompt "Modo de demostracion"
+    default SEMAFORO_CONVENCIONAL
+config SEMAFORO_CONVENCIONAL
+    bool "Demostracion convencional"
+config SEMAFORO_ADAPTATIVO
+    bool "Demostracion adaptativa con demanda simulada"
+endchoice
 config SEMAFORO_SIMULAR_DEMANDA
-    bool "Inyectar demanda simulada (sin modificar tiempos)"
+    bool "Inyectar escenarios de demanda simulada"
+    default y if SEMAFORO_ADAPTATIVO
     default n
 config SEMAFORO_VERDE_1_MS
-    int "Verde carril 1 (ms)"
-    range 1000 60000
+    int "Verde convencional carril 1 (ms)"
+    range 5000 13000
     default 5000
 config SEMAFORO_VERDE_2_MS
-    int "Verde carril 2 (ms)"
-    range 1000 60000
+    int "Verde convencional carril 2 (ms)"
+    range 5000 13000
+    default 5000
+config SEMAFORO_VERDE_MIN_MS
+    int "Verde adaptativo minimo (ms)"
+    range 5000 13000
+    default 5000
+config SEMAFORO_VERDE_MAX_MS
+    int "Verde adaptativo maximo (ms)"
+    range 5000 13000
+    default 13000
+config SEMAFORO_UMBRAL
+    int "Diferencia minima para prioridad (vehiculos)"
+    range 1 1000
+    default 2
+config SEMAFORO_INCREMENTO_MS
+    int "Incremento por nivel (ms)"
+    range 1 8000
+    default 2000
+config SEMAFORO_OBJETIVO_SIN_VERDE_MS
+    int "Objetivo nominal maximo sin verde (ms)"
+    range 10000 20000
+    default 20000
+config SEMAFORO_MAX_EDAD_DEMANDA_MS
+    int "Vigencia maxima local de demanda (ms)"
+    range 100 60000
     default 5000
 config SEMAFORO_AMARILLO_MS
     int "Amarillo (ms)"

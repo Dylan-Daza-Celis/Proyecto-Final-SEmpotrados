@@ -1,5 +1,9 @@
 # Semáforo inteligente — Sistemas Empotrados
 
+Tarea 06 B: [prioridad adaptativa simulada](Proyecto_Final_C6/PRIORIDAD06.md), con
+verde 5..13 s congelado al entrar, alternancia obligatoria y cota nominal sin
+verde de 19 s. El diagnóstico neuronal continúa por separado en el PR #5.
+
 Tarea 05 B: [controlador ESP32-C6](Proyecto_Final_C6/README.md) con ciclo autónomo,
 GPIO centralizados, FreeRTOS, cola de demanda simulada y pruebas C sin placa.
 Compilación real ESP-IDF v6.0.2/esp32c6 correcta; cableado y prueba física pendientes.
@@ -28,7 +32,7 @@ dos ROI: espera izquierda y derecha; convergencia y salida se excluyen. La lógi
 de circulación y el control de LEDs permanecerán en la C6.
 
 `D = N1 - N2`: D ≥ 2 prioriza carril 1; D ≤ -2 prioriza carril 2; |D| < 2 produce
-alternancia. Los tiempos iniciales serán verde mínimo 5 s, máximo 15 s, amarillo
+alternancia. Los tiempos iniciales serán verde mínimo 5 s, máximo 13 s, amarillo
 2 s y rojo total 1 s, con espera máxima objetivo 20 s. Se deberá validar su
 coherencia y evitar esperas indefinidas. Nunca se permitirán ambos verdes; la
 pérdida de datos válidos llevará de forma controlada a ambos rojos.
@@ -103,7 +107,7 @@ demostrada**. Ver [guía de ejecución/evaluación](Vision_Artificial/README.md)
 | 1.4 | Cliente/visualizador confirmados por el usuario; controles de vigencia y ROI corregidos en 04 |
 | 2.1 | Dataset propio y entrenamiento pospuestos |
 | 2.2–2.3 | YOLO11x y conteo por ROI implementados; evaluación física de exactitud pendiente |
-| 3.1–3.4 | GPIO C6, estados, FreeRTOS y demanda simulada implementados; prioridad dinámica pendiente |
+| 3.1–3.4 | GPIO, estados, FreeRTOS y prioridad adaptativa simulada implementados; validación física pendiente |
 | 4.1–4.3 | UDP, integración y validación de modo seguro |
 | 5.1–5.2 | Experimentos, documentación y demostración |
 
