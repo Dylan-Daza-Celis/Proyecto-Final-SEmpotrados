@@ -1,17 +1,17 @@
 #include <stdbool.h>
 #include "camera_driver.h"
+#include "wifi_manager.h"
+#include "http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define PERIODO_CAPTURA_MS 5000
-
-static const char *TAG = "practica_1_1";
+static const char *TAG = "practica_1_2_1_3";
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Práctica 1.1; ESP-IDF %s; target esp32", esp_get_idf_version());
+    ESP_LOGI(TAG, "Prácticas 1.2/1.3; ESP-IDF %s; target esp32", esp_get_idf_version());
     camera_registrar_memoria();
 
     const esp_err_t resultado = camera_inicializar();
@@ -21,13 +21,19 @@ void app_main(void)
         return;
     }
 
-    // app_main ya se ejecuta en una tarea FreeRTOS; no hace falta otra tarea.
+    const esp_err_t resultado_wifi = wifi_inicializar();
+    if (resultado_wifi != ESP_OK) {
+        ESP_LOGE(TAG, "No se pudo iniciar Wi-Fi: %s. Revise menuconfig y reinicie.", esp_err_to_name(resultado_wifi));
+        return;
+    }
+    // El HTTP es el único consumidor de imágenes; se conserva la función de
+    // diagnóstico 1.1, pero ya no hay un bucle competidor de capturas periódicas.
     while (true) {
-        if (camera_capturar_registrar() != ESP_OK) {
-            ESP_LOGW(TAG, "Se reintentará la captura después de %d ms.", PERIODO_CAPTURA_MS);
+        const esp_err_t estado_http = wifi_esperar_ip(1000)
+            ? servidor_http_iniciar() : servidor_http_detener();
+        if (estado_http != ESP_OK) {
+            ESP_LOGE(TAG, "Cambio de estado HTTP falló: %s", esp_err_to_name(estado_http));
         }
-        camera_registrar_memoria();
-        // Cede la CPU también cuando falla una captura; evita un bucle ocupado.
-        vTaskDelay(pdMS_TO_TICKS(PERIODO_CAPTURA_MS));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

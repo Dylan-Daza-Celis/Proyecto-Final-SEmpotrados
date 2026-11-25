@@ -1,274 +1,281 @@
-# Práctica 1.1 — Cámara OV2640/OV3660 y captura JPEG
+# Tarea 02 — Wi-Fi y fotografías por HTTP
 
-Inicializa una OV2640 u OV3660 y adquiere una imagen QVGA por intento. Imprime contador,
-resolución, formato, tamaño y memoria; devuelve el framebuffer al controlador y
-espera 5000 ms antes del siguiente intento. No guarda JPEG ni los envía por UART.
-El monitor muestra metadatos, no una imagen visualizable.
+Prácticas **1.2 y 1.3** sobre el controlador de cámara de 1.1. La ESP32-CAM sirve
+una interfaz local para capturar, ver y descargar JPEG. La C6, la red neuronal,
+OpenCV y el intercambio UDP de conteos siguen pendientes.
 
-## Requisitos y dependencias
+## Evidencia anterior y hardware
 
-- ESP32-CAM clásica con OV2640 u OV3660, PSRAM y pinout AI Thinker. El usuario
-  confirmó por UART una OV3660 (PID 0x3660); la captura aún debe comprobarse.
-- Base ESP32-CAM-MB CH340G, cable USB de datos y alimentación estable adecuada a
-  la base. El UART del ESP32 usa lógica de 3.3 V.
-- VS Code con extensión oficial ESP-IDF; instalación efectiva **ESP-IDF v6.0.2**,
-  Python del entorno IDF, CMake, Ninja y compilador Xtensa instalados.
-- Acceso al registro oficial de componentes durante la primera configuración.
+El usuario confirmó en 1.1 **19 capturas consecutivas con memoria estable**,
+con dos avisos NO-SOI iniciales. No se había inspeccionado visualmente una foto.
 
-`main/idf_component.yml` fija `espressif/esp32-camera ==2.1.9` y admite IDF
-`>=6.0.2,<6.1.0`. La versión del controlador se verificó en el
-[registro oficial](https://components.espressif.com/components/espressif/esp32-camera/versions/2.1.9/readme).
-Su [manifiesto](https://github.com/espressif/esp32-camera/blob/v2.1.9/idf_component.yml)
-requiere IDF ≥5.1 y arrastra `esp_jpeg`; su
-[CMake](https://github.com/espressif/esp32-camera/blob/v2.1.9/CMakeLists.txt)
-incluye dependencias específicas para IDF ≥6.0. Se comprobó la estructura
-`camera_config_t` en la
-[cabecera de esa versión](https://github.com/espressif/esp32-camera/blob/v2.1.9/driver/include/esp_camera.h).
-La declaración de compatibilidad se complementa con el resultado real de compilación
-indicado al final de esta guía.
-
-Component Manager descarga `managed_components/` y genera `dependencies.lock`.
-Versionar el bloqueo generado, nunca inventarlo ni editar sus hashes. Los
-componentes descargados y `build/` están ignorados. El código de aplicación es C;
-el componente oficial incluye internamente fuentes C++ de conversión.
-
-## Pinout inicial
-
-Definido únicamente en `main/camera_pinout.h`. Verificar modelo y conexiones antes
-de alimentar. No confundir el ejemplo WROVER del componente con AI Thinker.
-
-| Señal de cámara | GPIO ESP32 |
+| Dato | Hardware / configuración |
 | --- | --- |
-| PWDN | 32 |
-| RESET | -1 (reinicio por software) |
-| XCLK | 0 |
-| SIOD / SDA SCCB | 26 |
-| SIOC / SCL SCCB | 27 |
-| D0 | 5 |
-| D1 | 18 |
-| D2 | 19 |
-| D3 | 21 |
-| D4 | 36 |
-| D5 | 39 |
-| D6 | 34 |
-| D7 | 35 |
-| VSYNC | 25 |
-| HREF | 23 |
-| PCLK | 22 |
+| ESP-IDF / target / UART | v6.0.2 / esp32 / COM12 |
+| Chip / CPU | ESP32-D0WD revisión v3.1 / 160 MHz |
+| Sensor físico | **OV3660, PID 0x3660**; el producto anunciaba OV2640 |
+| Compatibilidad conservada | OV2640 y OV3660 por detección del componente oficial |
+| Flash | 4 MiB físicos; esta tarea configura **4 MiB** (antes 2 MiB) |
+| PSRAM | 8 MiB físicos, 4 MiB mapeados al heap; prueba previa correcta |
+| Base | ESP32-CAM-MB USB-UART CH340G |
 
-## Configuración y PSRAM
+Se conserva JPEG QVGA 320 × 240 inicial, calidad 12, XCLK 20 MHz, un framebuffer en
+PSRAM, CAMERA_GRAB_WHEN_EMPTY, LEDC_TIMER_0 y LEDC_CHANNEL_0. Flash y PSRAM siguen
+a 40 MHz; brownout permanece habilitado.
 
-| Parámetro | Valor |
+### Pinout AI Thinker
+
+Definido en `main/camera_pinout.h`. La detección previa funciona con estas
+conexiones; la comprobación visual también verificará el bus de datos.
+
+| Señal | GPIO | Señal | GPIO |
+| --- | --- | --- | --- |
+| PWDN | 32 | RESET | -1 (software) |
+| XCLK | 0 | SIOD / SDA | 26 |
+| SIOC / SCL | 27 | D0 | 5 |
+| D1 | 18 | D2 | 19 |
+| D3 | 21 | D4 | 36 |
+| D5 | 39 | D6 | 34 |
+| D7 | 35 | VSYNC | 25 |
+| HREF | 23 | PCLK | 22 |
+
+## Configurar y probar desde Visual Studio Code
+
+1. Abrir **Proyecto_Final_Cam** y ejecutar **ESP-IDF: Open ESP-IDF Terminal**.
+2. Confirmar la instalación efectiva y el target. Ejecutar `set-target` **antes de
+   introducir credenciales**, porque regenera sdkconfig y limpia build:
+
+   ```powershell
+   idf.py --version
+   idf.py set-target esp32
+   idf.py menuconfig
+   ```
+
+3. En **Semáforo inteligente - conexión local**, introducir SSID y contraseña.
+   Usar red de **2.4 GHz**. SSID: 1..32 bytes. Contraseña WPA2: 8..63 bytes.
+   Una contraseña vacía selecciona red abierta. No se admiten WPA Enterprise,
+   portales cautivos ni claves hexadecimales de 64 caracteres en esta versión.
+4. Verificar **Serial flasher config → Flash size → 4 MB**.
+   Verificar **Partition Table → Partition Table → Single factory app (large),
+   no OTA**. La tabla oficial reserva 1500 KiB para la aplicación, conservando
+   offsets de NVS y factory. El enlace con Wi-Fi completo dejaba solo 4 % libre
+   en la partición anterior de 1 MiB; esta tabla da margen sin cambiar la cámara.
+   En **Component config → ESP PSRAM** conservar soporte, inicialización al
+   arrancar, memoria asignable, prueba y 40 MHz. Guardar y salir.
+5. Compilar y programar:
+
+   ```powershell
+   idf.py build
+   idf.py -p COM12 -b 115200 flash monitor
+   ```
+
+6. Si se usó puente GPIO0–GND para entrar al cargador, retirarlo y reiniciar para
+   ejecutar: GPIO0 genera XCLK. Cerrar monitores anteriores si COM12 está ocupado.
+7. Esperar en el monitor `IPv4: ... — abrir http://.../` y el mensaje de inicio
+   HTTP. La cámara se estabiliza antes de iniciar la conexión.
+8. Abrir **http://IP-DE-LA-CAMARA/** desde una computadora en la misma LAN.
+   No usar HTTPS. Si el router aísla clientes o la computadora está en otra red,
+   la dirección puede no ser accesible.
+9. Pulsar **Capturar imagen**, mover físicamente un juguete y capturar otra vez.
+   Confirmar que cambian la escena y el identificador.
+10. Comparar QVGA, VGA y SVGA con **Aplicar ajustes** y una nueva captura.
+    Probar calidad 12, 20 y 30; descargar el JPEG y abrirlo en el visor de la PC.
+    Observar encuadre, nitidez, orientación y artefactos: el tamaño por sí solo
+    no acredita calidad visual.
+
+Para compilaciones posteriores no hace falta repetir set-target. Los defaults
+solo se aplican al generar sdkconfig; si se conserva una configuración previa,
+verificar el tamaño Flash de 4 MB en menuconfig. No se requieren rutas absolutas
+locales en CMake ni reinstalar ESP-IDF.
+
+### Credenciales locales
+
+Los valores Kconfig se guardan en **sdkconfig**, ignorado por Git junto con
+sdkconfig.old y build/. No copiar valores a sdkconfig.defaults ni a README.
+`wifi_manager` no imprime SSID ni contraseña, y usa WIFI_STORAGE_RAM para no
+persistirlas mediante el driver Wi-Fi. Los binarios y cabeceras generados sí
+incorporan los valores compilados: conservarlos localmente. No se han configurado
+credenciales reales del usuario durante el desarrollo.
+
+## Interfaz y endpoints
+
+La interfaz HTML/CSS/JavaScript se incluye mediante **EMBED_TXTFILES**. Funciona
+sin Internet ni frameworks externos. Muestra conexión, modelo, configuración,
+capturas correctas/fallidas y memoria. La descarga usa la última imagen mostrada,
+sin solicitar otra foto.
+
+| Método / ruta | Respuesta |
 | --- | --- |
-| Target | `esp32` |
-| Sensores aceptados | OV2640 (PID 0x26) u OV3660 (PID 0x3660); se registra el modelo real |
-| Resolución / formato | QVGA 320 × 240 / `PIXFORMAT_JPEG` |
-| XCLK / calidad JPEG | 20 MHz / 12 (menor número implica mayor calidad) |
-| Buffers / ubicación | 1 / `CAMERA_FB_IN_PSRAM` |
-| Adquisición | `CAMERA_GRAB_WHEN_EMPTY` |
-| LEDC | `LEDC_TIMER_0` / `LEDC_CHANNEL_0` |
-| Tamaño buffer JPEG | Automático (`jpeg_buffer_size=0`) |
-| Espera entre intentos | 5000 ms usando `vTaskDelay()` |
+| GET / | Interfaz HTML embebida |
+| GET /capture | JPEG; Content-Type image/jpeg; X-Capture-Id y nombre captura-ID.jpg |
+| GET /status | JSON con estado, sensor/PID, dimensiones, calidad, contadores, memoria y tiempo encendido |
+| POST /control | Aplica configuración autorizada y devuelve el mismo JSON de estado |
 
-La espera empieza al terminar cada intento; el intervalo entre registros también
-incluye captura y diagnóstico, y puede aumentar si el controlador agota su espera.
-`WHEN_EMPTY` puede entregar una imagen ya encolada; esta práctica no garantiza una
-imagen tomada exactamente en el instante del registro ni una cadencia de tiempo real.
+Todas las respuestas incluyen Cache-Control no-store/no-cache, Pragma y Expires.
+La interfaz también solicita con cache no-store y distingue cada imagen por su ID.
+La vista continua solicita otra captura **un segundo después de terminar** la
+operación anterior; la tasa puede ser menor de 1 imagen/s. Se puede detener sin
+abortar el envío que está terminando. No se implementa streaming MJPEG.
 
-`sdkconfig.defaults` usa opciones comprobadas en Kconfig de IDF 6.0.2 para ESP32:
-`CONFIG_SPIRAM`, autodetección, inicialización al arrancar, prueba de memoria e
-integración con `malloc`. Se elige flash/PSRAM a 40 MHz como punto conservador de
-partida para QVGA; XCLK permanece a 20 MHz. No se activa PSRAM DMA de S2/S3.
-Ver [soporte oficial de RAM externa](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-guides/external-ram.html).
+### Contrato de POST /control
 
-`CONFIG_SPIRAM_IGNORE_NOTFOUND=y` permite que la aplicación informe ausencia de
-PSRAM sin reinicios por esa causa. **No permite capturar sin PSRAM**:
-`camera_inicializar()` verifica inicialización, tamaño y memoria asignable antes
-de llamar al controlador. No hay sustitución silenciosa por DRAM. El detector
-de brownout permanece habilitado.
-
-Los defaults solo se aplican al generar `sdkconfig`; una configuración existente
-puede prevalecer. En tal caso revisar `idf.py menuconfig` → Component config →
-ESP PSRAM y ejecutar de nuevo `idf.py set-target esp32` para regenerar configuración
-si corresponde; este último comando limpia `build` y conserva `sdkconfig.old`.
-No ejecutar sobre una compilación que se necesite conservar.
-
-## Compilar desde Visual Studio Code
-
-1. Abrir **la carpeta `Proyecto_Final_Cam`** en VS Code.
-2. Seleccionar la instalación ESP-IDF v6.0.2 ya disponible. No reinstalar ni cambiar
-   la configuración global para este proyecto.
-3. Ejecutar **ESP-IDF: Open ESP-IDF Terminal** desde la paleta de comandos.
-4. En esa terminal, estando en la carpeta que contiene el CMake raíz de cámara:
-
-```powershell
-idf.py --version
-idf.py set-target esp32
-idf.py build
-```
-
-La primera línea debe mostrar `ESP-IDF v6.0.2`. El target también queda validado
-por el CMake raíz; no seleccionar `esp32c6` en este proyecto. El gestor resolverá
-automáticamente la dependencia; no hace falta `add-dependency` otra vez.
-El éxito se identifica por `Project build complete` y el archivo
-`build/Proyecto_Final_Cam.bin`.
-
-En otros sistemas usar la terminal activada por `export.sh`/`export.ps1` de la
-instalación correspondiente. No copiar rutas absolutas de Windows a CMake.
-Los archivos OpenOCD heredados son para depuración; la prueba actual usa UART.
-
-## Programar por UART y observar
-
-1. Instalar el controlador CH340G solo si el dispositivo no aparece. Consultar el
-   puerto en Administrador de dispositivos → Puertos (COM y LPT), y cerrar otras
-   terminales que lo estén usando.
-2. Insertar la cámara en la base con la orientación correcta y verificar la cinta
-   de la cámara con la placa sin alimentación.
-3. Sustituir `COMx` por el puerto real en los comandos siguientes:
-
-```powershell
-idf.py -p COMx -b 115200 flash
-idf.py -p COMx monitor
-```
-
-Si la base controla automáticamente BOOT/RESET, el flasheo reiniciará la placa.
-Si se queda en `Connecting...`, entrar manualmente al cargador: mantener GPIO0
-a GND durante RESET/encendido según los botones/puentes de la base. Finalizada la
-programación, **retirar el puente GPIO0–GND** y reiniciar para ejecutar: GPIO0
-debe quedar libre porque genera XCLK. No retirar ni conectar la cinta con alimentación.
-El monitor usa la velocidad de consola predeterminada de 115200; salir con `Ctrl+]`.
-
-## Resultado esperado y prueba manual
-
-Ejemplo **ilustrativo**, no transcripción de hardware probado; tamaños y memoria varían:
+Content-Type exacto: `application/x-www-form-urlencoded`.
+Cuerpo de menos de 80 bytes, **dos campos en este orden**, sin campos adicionales:
 
 ```text
-I (...) practica_1_1: Práctica 1.1; ESP-IDF v6.0.2; target esp32
-I (...) camera_driver: PSRAM detectada: ... bytes
-I (...) camera_driver: OV3660 inicializada (PID=0x3660): JPEG QVGA 320x240, calidad=12, XCLK=20 MHz, 1 framebuffer en PSRAM.
-I (...) camera_driver: Imagen #1: 320x240, formato=JPEG (...), tamaño=... bytes
-I (...) camera_driver: RAM interna: libre=..., mínimo=..., bloque mayor=... bytes
-I (...) camera_driver: PSRAM: libre=..., mínimo=..., bloque mayor=... bytes
+resolution=VGA&quality=12
 ```
 
-Mantener el monitor al menos un minuto. Confirmar contador creciente, 320x240,
-JPEG, longitud mayor que cero y nuevas líneas aproximadamente cada cinco segundos.
-Mover juguetes ante la cámara puede variar el tamaño JPEG; esta práctica no permite
-evaluar visualmente enfoque ni contenido. Observar memoria después de cada retorno:
-no debería existir una caída sostenida por cada captura. El mínimo histórico puede
-disminuir al arrancar sin que eso pruebe una fuga.
+- resolution: QVGA (320 × 240), VGA (640 × 480) o SVGA (800 × 600).
+- quality: entero de 10 a 40, sin signos, decimales ni ceros iniciales.
+- Menor número significa más calidad y normalmente más bytes.
+- Campos desconocidos/duplicados, NUL incrustado y valores fuera de rango se
+  rechazan con 400. Tipo de contenido incorrecto: 415.
+- Un cuerpo no admitido cierra la sesión tras responder, sin drenar longitudes
+  arbitrarias. Recepción incompleta/timeout: 408 o cierre de conexión.
+- Fallo de cámara o mutex ocupado: 503. No se aceptan nombres arbitrarios de
+  funciones o registros del sensor.
 
-Si falla una captura, debe aparecer error y aviso de reintento con espera de 5000 ms;
-no aumenta el contador. Ante PSRAM ausente, sensor no admitido o fallo de inicio, se
-debe informar la causa/código y no aparecer ninguna línea `Imagen #`.
-No desconectar el sensor en caliente para provocar fallos.
+Ejemplos opcionales desde PowerShell, sustituyendo IP-DE-LA-CAMARA:
 
-## Funciones y decisiones
+```powershell
+curl.exe -i http://IP-DE-LA-CAMARA/status
+curl.exe -D cabeceras.txt -o foto.jpg http://IP-DE-LA-CAMARA/capture
+curl.exe -i -X POST http://IP-DE-LA-CAMARA/control -H "Content-Type: application/x-www-form-urlencoded" --data "resolution=SVGA&quality=12"
+curl.exe -i -X POST http://IP-DE-LA-CAMARA/control -H "Content-Type: application/x-www-form-urlencoded" --data "resolution=UXGA&quality=99"
+```
 
-- `app_main()` registra versión/memoria, comprueba inicialización y ejecuta el bucle
-  en su propia tarea FreeRTOS. No necesita otra tarea, cola ni temporizador en 1.1.
-- `camera_inicializar()` verifica PSRAM, prepara `camera_config_t`, comprueba
-  `esp_camera_init()` y valida que el sensor sea OV2640 u OV3660. Registra su modelo
-  real; ante otro sensor libera el controlador e informa el error. No continúa
-  capturando tras un fallo.
-- `camera_capturar_registrar()` exige inicialización, obtiene un framebuffer,
-  comprueba metadatos y registra una captura correcta. Usa un único punto de
-  `esp_camera_fb_return()` para todos los buffers adquiridos, incluso descartados.
-  No conserva punteros después del retorno. La comprobación de metadatos no
-  sustituye una futura decodificación/inspección visual del JPEG.
-- `camera_registrar_memoria()` muestra bytes libres, mínimo histórico y mayor
-  bloque contiguo para memoria interna y externa.
+El último ejemplo debe responder 400 y conservar la configuración previa. El
+contador indica JPEG adquiridos y validados, incluso si después falla su entrega;
+no representa descargas completadas ni cuenta descartes de estabilización/frescura.
 
-## Problemas frecuentes
+## Organización, sincronización y memoria
+
+- **main.c:** inicializa cámara/Wi-Fi y supervisa el único servidor. Inicia HTTP
+  solo con IPv4 válida y lo detiene al detectar pérdida de IP/conexión.
+- **wifi_manager.c:** esp_netif, esp_event, esp_wifi, NVS y grupo de eventos
+  FreeRTOS. Una tarea reconecta con pausas de 1, 2, 4, 8, 16 y hasta 30 s; se
+  restablece la demora al obtener IP. La espera ocurre fuera del bucle de eventos.
+  Si NVS está llena o tiene formato incompatible, se informa y se reinicializa
+  borrando esa partición. Una configuración vacía/inválida detiene el inicio.
+- **camera_driver.c:** conserva pinout e inicialización de 1.1. Agrega mutex con
+  espera máxima de 1 s, adquisición, estado y reconfiguración. La función
+  camera_capturar_registrar sigue disponible para diagnóstico, usando el mismo
+  mutex; ya no se ejecuta el bucle periódico de 1.1.
+- **http_server.c:** handlers oficiales y envío síncrono del JPEG sin copiarlo
+  a otro buffer. El framebuffer sigue válido y el mutex permanece tomado hasta
+  retornar httpd_resp_send; se devuelve también ante desconexión o error.
+- **web/index.html:** una sola operación de red a la vez, timeout de 30 s,
+  decodificación de JPEG por el navegador antes de reemplazar la foto y liberación
+  de la object URL anterior. Solo se conserva la última foto.
+
+Con un framebuffer y WHEN_EMPTY puede existir una imagen encolada de la pausa
+anterior. Por eso se adquiere/devuelve una antes de obtener la que se enviará.
+No se promete una fotografía tomada exactamente al hacer clic. Se comprueban
+dimensiones, formato, buffer y marcadores **FF D8 / FF D9**; eso detecta truncados
+e incoherencias, pero no sustituye la inspección visual/decodificación completa.
+
+### Cambiar resolución de forma segura
+
+No basta cambiar registros del sensor: el componente calcula el tamaño del
+buffer al inicializarse (automático, según resolución). El controlador toma el
+mutex, desinicializa y reinicializa la cámara con la nueva resolución/calidad,
+conservando el resto de parámetros. No hay framebuffer prestado durante el cambio.
+Si falla, intenta restaurar la configuración anterior **una vez**. Si también
+falla la restauración, /status informa camera_ready=false; un control válido puede
+intentar recuperarla o se puede reiniciar la placa. No hay bucle infinito.
+
+El servidor atiende solicitudes secuencialmente, con 3 sockets y pila de 8192
+bytes. Los timeouts de envío/recepción son 5 s por espera de socket; no constituyen
+un plazo global de una descarga. Cada esp_camera_fb_get espera hasta unos 4 s en
+el componente seleccionado; una captura tiene como máximo dos adquisiciones y
+una estabilización tiene dos intentos. Una cámara lenta puede retrasar /status.
+La vista continua de una pestaña evita acumular peticiones; varias pestañas
+comparten la misma cámara y no aumentan su capacidad.
+
+### NO-SOI y estabilización
+
+En cam_hal.c de esp32-camera 2.1.9, NO-SOI significa que no se encontró la cabecera
+JPEG esperada al comienzo del flujo. Los dos avisos iniciales del usuario son
+compatibles con un transitorio al arrancar el sensor; esa causa no está demostrada
+con una medición de hardware. Se añade una pausa de 200 ms y se descartan **dos**
+adquisiciones al iniciar/reconfigurar, registrando el resultado y devolviendo
+todos los buffers obtenidos. No se cambia el nivel de log ni se ocultan errores
+del componente. Si los avisos persisten, revisar alimentación, cinta, pinout y
+escena; no aumentar indefinidamente los descartes.
+
+## Validación y seguimiento
+
+| Prueba | Estado |
+| --- | --- |
+| 1.1: OV3660, 19 capturas y memoria estable | Confirmado por el usuario |
+| Fotografía de 1.1 visualmente correcta | Aún no comprobada |
+| ESP-IDF v6.0.2 y target esp32 | Comprobados localmente |
+| idf.py set-target esp32 | Finalizó con código 0 |
+| Configuración generada | Flash 4 MiB, factory 1500 KiB, PSRAM a 40 MHz, brownout habilitado |
+| Compilación sin SSID configurado | Código 0; binario 445600 bytes |
+| Enlace completo con configuración Wi-Fi ficticia local | Código 0; Project build complete; 1006592 bytes (0xf5c00), 34 % libre en factory de 1500 KiB |
+| JavaScript real de la interfaz | 5 pruebas automatizadas correctas con Node, sin dependencias |
+| Wi-Fi real, IPv4, HTTP y descarga en la placa | Pendientes de la prueba física del usuario |
+| QVGA/VGA/SVGA, cambios de escena y estabilidad con Wi-Fi | Pendientes de prueba física |
+| C6 y dependencias gestionadas | Sin cambios |
+
+Las pruebas de JavaScript usan respuestas/DOM simulados: verifican solicitudes
+secuenciales, detener, manejo de HTTP 503, validación de calidad y liberación de
+blobs tras reemplazo/error de decodificación. No son una prueba de navegador ni
+de la placa. Ejecutarlas opcionalmente desde la raíz:
+
+```powershell
+node --test Proyecto_Final_Cam/tests/web_ui.test.cjs
+```
+
+Node no es dependencia del firmware ni requisito para programarlo.
+
+Verificación realizada el **24 de noviembre de 2026** con ESP-IDF v6.0.2.
+El gestor reutilizó el bloqueo y los componentes ya descargados al no disponer
+de red en el entorno aislado. Los avisos Kconfig heredados del SDK no impidieron
+la compilación. La configuración final y el binario indican flash de 4 MiB y
+tabla oficial partitions_singleapp_large.csv. Los valores Wi-Fi ficticios de
+validación se retiraron de sdkconfig/sdkconfig.old antes de entregar los cambios;
+es obligatorio introducir la red real y reconstruir antes de programar.
+
+### Pruebas físicas de aceptación
+
+1. Capturar y abrir un JPEG descargado; mover un juguete y comprobar cambio real.
+2. Aplicar QVGA, VGA y SVGA alternadamente; comprobar dimensiones decodificadas.
+3. Mantener vista continua al menos 10 minutos. Comparar /status tras calentamiento
+   y después de volver a la misma resolución: no debería haber caída sostenida de
+   memoria por captura. Los mínimos históricos pueden bajar sin indicar una fuga.
+4. Detener vista continua: debe terminar la operación en curso y cesar /capture.
+5. Desconectar/reconectar el punto de acceso y verificar nuevos mensajes IPv4,
+   reconexión con demora y una sola instancia del servidor. Usar la IP actual.
+6. Cerrar el navegador durante una descarga; volver a abrir y capturar.
+7. Enviar controles inválidos; verificar 400/415 sin cambios de parámetros.
+8. Registrar resultados reales antes de dar por cumplidos los criterios de
+   fotografía visible, descarga válida, reconexión y memoria estable de la tarea 02.
+
+## Diagnóstico y limitaciones
 
 | Síntoma | Revisión |
 | --- | --- |
-| `idf.py` no reconocido | Abrir terminal ESP-IDF, comprobar instalación seleccionada y `idf.py --version`; no usar Python ajeno al entorno |
-| Error al resolver el componente | Revisar conexión/proxy y versión del manifiesto; no reemplazar el bloqueo con hashes manuales |
-| Target incorrecto | Ejecutar `idf.py set-target esp32` dentro de cámara |
-| PSRAM ausente o error de prueba de memoria | Confirmar variante física y opciones generadas, alimentación y montaje; no asumir que toda ESP32-CAM lleva PSRAM funcional |
-| `Camera probe failed` / sensor no detectado | Revisar cinta, cierre del conector, orientación, modelo y pinout con placa apagada |
-| `Se esperaba OV2640; PID detectado=0x3660` | Versión inicial que solo aceptaba OV2640. La placa reporta OV3660; recompilar y programar la versión corregida que acepta ambos modelos |
-| `ov3640: Mismatch PID=0x3660` seguido de `Detected OV3660 camera` | Es el intento de identificación de otro modelo dentro del componente; la detección posterior de OV3660 es la relevante |
-| `Virtual address not enough ... 4MB is mapped` con prueba de PSRAM correcta | Se detectan 8 MiB físicos pero solo se mapean 4 MiB al heap. En el registro aportado hay memoria suficiente para el framebuffer QVGA; no causó la detención |
-| Flash detectada de 4096k y cabecera de 2048k | El firmware utiliza un límite de 2 MiB sobre flash física de 4 MiB. La partición actual cabe; no causó la detención. Para usar toda la flash seleccionar 4 MB en `idf.py menuconfig` → Serial flasher config → Flash size y recompilar/programar |
-| Aviso GDB `COMx`, seguido de uso del nombre extendido de COM12 | El monitor adapta el nombre del puerto para Windows; si llegan los registros, no es un fallo de conexión |
-| `ESP_ERR_NO_MEM` | Consultar memoria/bloque mayor, defaults PSRAM y framebuffer único; no aumentar resolución |
-| Timeout/imagen descartada | Revisar alimentación, cinta, pinout y XCLK; el bucle reintenta sin perder el buffer adquirido |
-| Brownout o reinicios | Corregir fuente, cable y conexiones; mantener detector habilitado |
-| `Connecting...` o placa en modo descarga | Revisar COM, cable de datos, BOOT/RESET y puente GPIO0; liberarlo para ejecución |
-| Puerto ocupado / acceso denegado | Cerrar monitor anterior y otras aplicaciones serie; comprobar puerto real |
-| Rutas/herramientas heredadas inválidas | Seleccionar instalación local desde la extensión; el firmware y CMake no dependen de esas rutas |
+| Solicita configurar SSID/contraseña | Abrir menuconfig y guardar datos locales antes de compilar/programar |
+| No obtiene IP | Red 2.4 GHz, credenciales, señal y DHCP; el monitor muestra motivo de desconexión, no la clave |
+| No abre la página | Misma LAN, IP actual, HTTP puerto 80 y aislamiento de clientes del router |
+| Sigue apareciendo flash 2 MB | Configuración sdkconfig previa; seleccionar 4 MB en menuconfig y reconstruir/programar |
+| Aviso de 8 MiB PSRAM con 4 MiB mapeados | Limitación del espacio de direcciones de ESP32; memoria utilizable suficiente para estas resoluciones |
+| HTTP 503 / captura inválida | Revisar monitor; SOI/EOI, memoria, alimentación y cinta; reintentar o recuperar mediante control válido |
+| JPEG de SVGA falla en escenas complejas | El buffer es finito; probar calidad 20–30 o resolución menor, y anotar el resultado |
+| Brownout/reinicio | Corregir fuente/cable; mantener detector habilitado |
+| COM12 ocupado o Connecting... | Cerrar monitor previo; revisar cable de datos y BOOT/RESET de la base |
 
-## Validación registrada
+HTTP local sin autenticación ni TLS. No se guarda una galería, no hay MJPEG ni
+detección de vehículos en esta etapa. Aún no se ha probado el conjunto Wi-Fi +
+cámara en hardware: no se afirma ausencia de fugas ni calidad visual sin esa prueba.
 
-Verificación inicial del **24 de noviembre de 2026** (versión `9d079b5`, anterior
-a la corrección de aceptación de OV3660):
+## Referencias oficiales
 
-| Comprobación | Resultado real |
-| --- | --- |
-| Versión efectiva (etiqueta Git y `idf.py --version`) | ESP-IDF v6.0.2 |
-| Herramientas | Python 3.11.15, CMake 4.0.3, Ninja 1.12.1, GCC Xtensa 15.2.0 |
-| `idf.py set-target esp32` | Finalizó con código 0 |
-| Component Manager | Cámara 2.1.9, esp_jpeg 1.3.2; `dependencies.lock` generado |
-| Opciones generadas | Target esp32, PSRAM inicializada al arranque, 40 MHz, brownout habilitado |
-| `idf.py build` | Código 0; `Project build complete` |
-| Binario de aplicación | `build/Proyecto_Final_Cam.bin`: 306688 bytes (0x4ae00); 71 % libre en partición de 1 MiB |
-| Revisión de cambios | `git diff --check` sin errores; C6 sin modificaciones |
-| Programación UART | El usuario aportó escritura verificada por hash y arranque por COM12 |
-| Prueba de memoria y detección | PSRAM pasó la prueba; el componente detectó e inicializó OV3660 |
-| Captura física | Detenida por validación exclusiva de OV2640; pendiente con la corrección |
-
-La primera descarga falló por la restricción de red del entorno aislado; se repitió
-con acceso autorizado al registro y el gestor resolvió las dependencias. Para usar
-la instalación existente se prepararon variables **solo en los procesos de
-validación**; no se modificaron perfiles ni configuración global de ESP-IDF.
-Durante la configuración aparecieron avisos de Kconfig de componentes del SDK y
-un aviso de símbolos ROM para GDB por una variable inicialmente ausente. Se indicó
-la ruta ROM instalada en el proceso de compilación; la construcción final terminó
-correctamente. No hubo errores de compilación en las fuentes de esta práctica.
-
-### Corrección a partir del registro del usuario
-
-El log aportado confirma ESP32-D0WD-V3, flash física de 4 MiB y PSRAM de 8 MiB
-con 4 MiB mapeados. El componente informó `Detected OV3660 camera` y `cam config ok`.
-Después, la aplicación rechazó PID 0x3660 al exigir OV2640; ese rechazo produjo
-`ESP_ERR_NOT_SUPPORTED (0x106)` y el retorno de `app_main()`.
-
-Se mantienen las comprobaciones y se admiten explícitamente **OV2640 y OV3660**,
-ambas soportadas por esp32-camera 2.1.9. El mensaje de inicialización muestra el
-modelo detectado en lugar de anunciar siempre OV2640. La configuración de captura
-no cambia. Los demás modelos siguen rechazándose.
-
-La corrección se recompiló con **ESP-IDF v6.0.2**, target `esp32`: `idf.py build`
-terminó con código 0 y `Project build complete`. El binario corregido ocupa
-**306752 bytes (0x4ae40)** y conserva 71 % libre en la partición. Se verificó que
-`CONFIG_OV2640_SUPPORT` y `CONFIG_OV3660_SUPPORT` están habilitados. El bloqueo de
-dependencias, los defaults y el firmware C6 permanecen sin cambios. La captura en
-hardware con este binario sigue pendiente de la prueba del usuario.
-
-Para probar la corrección, salir del monitor con `Ctrl+]` y ejecutar desde la
-terminal ESP-IDF de `Proyecto_Final_Cam`:
-
-```powershell
-idf.py build
-idf.py -p COM12 -b 115200 flash
-idf.py -p COM12 monitor
-```
-
-Debe aparecer `OV3660 inicializada (PID=0x3660)` y después `Imagen #1`, `Imagen #2`,
-etc. Esta salida es **esperada**, aún no comprobada en hardware con la corrección.
-No hace falta repetir `set-target` para este cambio de código.
-
-## Criterios de aceptación
-
-| Criterio | Evidencia / límite |
-| --- | --- |
-| Estructura existente, ESP-IDF nativo y target esp32 | Proyectos conservados; CMake y compilación verificados |
-| Dependencia oficial reproducible | Manifiesto fijo y bloqueo generado incluidos |
-| OV2640/OV3660, JPEG QVGA y configuración solicitada | Sensor OV3660 identificado por el usuario; captura con corrección pendiente |
-| Registro de capturas y manejo de errores | El registro confirma parada ante sensor rechazado; capturas tras corregir pendientes |
-| Devolución de framebuffers | Un único retorno común para cada adquisición no nula, incluso descartadas |
-| Documentación reproducible | Pinout, PSRAM, compilación, UART, monitor y diagnóstico en esta guía |
-| Alcance 1.1 | Sin funciones de etapas posteriores ni cambios en C6 |
-| Separación entre compilación y funcionamiento físico | Usuario confirmó programación/arranque de versión inicial; capturas con corrección pendientes |
+- [HTTP Server de ESP-IDF 6.0.2](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-reference/protocols/esp_http_server.html).
+- [Ejemplo Wi-Fi STA de ESP-IDF 6.0.2](https://github.com/espressif/esp-idf/tree/v6.0.2/examples/wifi/getting_started/station).
+- [Componente esp32-camera 2.1.9](https://components.espressif.com/components/espressif/esp32-camera/versions/2.1.9/readme).
+- [Gestión de JPEG y NO-SOI](https://github.com/espressif/esp32-camera/blob/v2.1.9/driver/cam_hal.c).
+- [RAM externa de ESP32](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-guides/external-ram.html).

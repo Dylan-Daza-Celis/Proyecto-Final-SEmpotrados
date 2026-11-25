@@ -39,34 +39,36 @@ pérdida de datos válidos llevará de forma controlada a ambos rojos.
 
 El registro confirma PSRAM física de 8 MiB, 4 MiB mapeados al heap y prueba de
 memoria correcta. El pinout AI Thinker permitió detectar e inicializar el sensor;
-la adquisición de imágenes con la corrección para OV3660 sigue pendiente.
+el usuario confirmó después **19 capturas consecutivas** con memoria estable.
+Hubo dos avisos NO-SOI iniciales; la inspección visual de fotografías sigue pendiente.
 
 ## Proyectos y estado
 
 | Carpeta | Target | Responsabilidad | Estado |
 | --- | --- | --- | --- |
-| `Proyecto_Final_Cam/` | `esp32` | Captura y posterior envío de imágenes | Práctica 1.1 implementada; validación en su README |
-| `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Plantilla existente, sin cambios en 1.1 |
+| `Proyecto_Final_Cam/` | `esp32` | Captura y envío HTTP de imágenes | 1.1 probada físicamente; 1.2/1.3 implementadas, validación física pendiente |
+| `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Plantilla existente, sin cambios |
 | `Vision Artificial/` | Computadora | Detector, ROI y conteos | Desarrollo posterior |
 
-Solo se implementa la práctica **1.1**. Su firmware captura JPEG QVGA, informa
-metadatos por UART y devuelve el buffer. No almacena ni transmite imágenes.
-La captura física sigue pendiente de prueba por el usuario.
+La **tarea 02 (prácticas 1.2/1.3)** añade estación Wi-Fi de 2.4 GHz y una página
+local con captura, descarga JPEG, vista continua, estado y controles validados.
+Se conserva el controlador de cámara y su configuración inicial; un mutex protege
+la captura, el envío y la reinicialización al cambiar resolución. Flash configurada
+para 4 MiB y PSRAM conservada. Credenciales únicamente en `menuconfig`/`sdkconfig`
+local ignorado. El servidor solo se inicia con IPv4 y se administra sin duplicados.
 
-Compilación verificada el **24 de noviembre de 2026** con ESP-IDF **v6.0.2** y
-target `esp32`: `idf.py set-target esp32` e `idf.py build` finalizaron correctamente.
-El usuario programó esa versión por COM12 y aportó el registro de arranque:
-el componente inicializó la OV3660, pero la validación de la aplicación detuvo
-la captura porque exigía OV2640. Se ajustó para aceptar ambos sensores y registrar
-su modelo real. Los resultados de compilación y los límites de la prueba física
-están en la guía de cámara.
+Para comenzar, abrir `Proyecto_Final_Cam` en VS Code y seguir su
+[guía de configuración y prueba](Proyecto_Final_Cam/README.md). Los resultados
+reales de compilación y el seguimiento de aceptación están en esa guía. La prueba
+Wi-Fi, HTTP, descarga y visualización física de la tarea 02 corresponde al usuario.
 
 ## Etapas
 
 | Etapa | Trabajo |
 | --- | --- |
-| 1.1 | Inicializar cámara OV2640/OV3660 y capturar JPEG periódicamente |
-| 1.2–1.4 | Wi-Fi, servidor HTTP JPEG y recepción Python/OpenCV |
+| 1.1 | Inicialización y captura: usuario confirmó 19 imágenes y memoria estable |
+| 1.2–1.3 | Wi-Fi/HTTP e interfaz implementados; prueba física pendiente |
+| 1.4 | Recepción Python/OpenCV pendiente |
 | 2.1–2.3 | Dataset de juguetes, detector neuronal, ROI y conteo |
 | 3.1–3.4 | GPIO C6, estados, prioridades simuladas y organización FreeRTOS |
 | 4.1–4.3 | UDP, integración y validación de modo seguro |

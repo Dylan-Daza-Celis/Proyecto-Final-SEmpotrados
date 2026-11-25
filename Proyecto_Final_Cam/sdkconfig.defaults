@@ -9,6 +9,10 @@ CONFIG_SPIRAM_MEMTEST=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 # Combinación válida y conservadora para JPEG QVGA: flash/PSRAM a 40 MHz.
 CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# Wi-Fi + HTTP rozan el límite de la partición de 1 MiB: usar la tabla oficial
+# de aplicación única grande (factory de 1500 KiB), dentro de la flash de 4 MiB.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 CONFIG_SPIRAM_SPEED_40M=y
 CONFIG_ESP_BROWNOUT_DET=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
