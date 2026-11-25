@@ -50,6 +50,9 @@ static void probar_demanda(void)
     d.secuencia=4;d.n1=-1;assert(gestor_demanda_recibir(&g,d,100,5000)==DEMANDA_INVALIDACION_NUEVA);
     d.secuencia=5;d.n1=0;d.recibida_ms=101;
     assert(gestor_demanda_recibir(&g,d,100,5000)==DEMANDA_INVALIDACION_NUEVA);
+    d=(demanda_vehicular_t){0,0,6,100,true};
+    assert(gestor_demanda_recibir(&g,d,100,5000)==DEMANDA_NUEVA_VALIDA);
+    assert(gestor_demanda_vigente(&g,100,5000) && g.ultima.n1==0 && g.ultima.n2==0);
 }
 
 static void probar_controlador(void)

@@ -15,7 +15,11 @@ static void registrar_demanda(const controlador_semaforos_t *controlador, uint64
 {
     const gestor_demanda_t *gestor=&controlador->demanda;
     if (!gestor_demanda_vigente(gestor,ahora,controlador->max_edad_demanda_ms)) {
-        ESP_LOGI(TAG,"Demanda NO vigente; sin medicion N1/N2; demostracion usa verde convencional");
+        if (gestor->ultima_secuencia && gestor->ultima.recibida_ms<=ahora)
+            ESP_LOGI(TAG,"Demanda NO vigente; edad=%"PRIu64" ms seq=%"PRIu64"; sin medicion N1/N2",
+                ahora-gestor->ultima.recibida_ms,gestor->ultima_secuencia);
+        else ESP_LOGI(TAG,"Demanda NO vigente; edad no disponible; sin medicion N1/N2");
+        ESP_LOGI(TAG,"Proxima seleccion sin demanda usa verde convencional; fase actual conserva duracion");
         return;
     }
     ESP_LOGI(TAG,"N1=%"PRId32" N2=%"PRId32" D=%"PRId32" valida=1 edad=%"PRIu64" ms seq=%"PRIu64,

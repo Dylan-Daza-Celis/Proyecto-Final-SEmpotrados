@@ -133,6 +133,6 @@ Faltan medidas físicas de tiempos, secuencia, fallos y confirmación del cablea
 Validación real de tarea 06: ambos ejecutables anfitriones C terminaron con éxito.
 ESP-IDF informó v6.0.2 y compiló target esp32c6 en dos configuraciones separadas,
 con salidas/simulador habilitados solo en las copias de prueba: convencional
-0x21c50 bytes y adaptativo 0x21dc0 bytes, ambos con 87 % libre en app de 1 MiB.
+0x21d70 bytes y adaptativo 0x21ee0 bytes, ambos con 87 % libre en app de 1 MiB.
 Se conservaron sdkconfig normal y settings.json del usuario. git diff --check
 correcto. No se programó la placa ni se midieron intervalos físicos.

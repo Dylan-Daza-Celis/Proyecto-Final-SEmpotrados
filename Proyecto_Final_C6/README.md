@@ -80,7 +80,7 @@ watchdog ni brownout. Esto es una maqueta educativa, con verificación física p
 
 ## Demanda simulada
 
-Habilitar SEMAFORO_SIMULAR_DEMANDA en menuconfig para recibir N1=3/N2=1 cada 2 s.
+Habilitar SEMAFORO_SIMULAR_DEMANDA en menuconfig para recorrer los escenarios reproducibles.
 La cola usa xQueueOverwrite y conserva solo el último valor. El propietario valida
 0..1000 vehículos, validez, secuencia estrictamente creciente y edad local ≤5 s,
 sin timestamps futuros. La secuencia no se reinicia durante el mismo arranque;
