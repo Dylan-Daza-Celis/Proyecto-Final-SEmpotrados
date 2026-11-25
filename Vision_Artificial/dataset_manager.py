@@ -23,6 +23,22 @@ def preparar_dataset(raiz):
             (Path(raiz) / categoria / division).mkdir(parents=True, exist_ok=True)
 
 
+def guardar_diagnostico(imagen_anotada, directorio, informacion):
+    """PNG anotado + JSON separados de los JPEG originales y del dataset."""
+    directorio = Path(directorio)
+    directorio.mkdir(parents=True, exist_ok=True)
+    nombre = f"diagnostico_{datetime.now(timezone.utc):%Y%m%dT%H%M%S_%fZ}_{uuid.uuid4().hex}"
+    correcto, buffer = cv2.imencode('.png', imagen_anotada)
+    if not correcto:
+        raise ValueError("No se pudo codificar el diagnóstico.")
+    ruta = directorio / (nombre + '.png')
+    with ruta.open('xb') as archivo:
+        archivo.write(buffer.tobytes())
+    with ruta.with_suffix('.json').open('x', encoding='utf-8') as archivo:
+        json.dump(informacion, archivo, indent=2, ensure_ascii=False, allow_nan=False)
+    return ruta
+
+
 class GestorDataset:
     def __init__(self, directorio):
         self.directorio = Path(directorio)

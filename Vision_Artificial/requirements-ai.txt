@@ -1,0 +1,4 @@
+# Complemento opcional; no reinstalar el entorno funcional si ya satisface esto.
+ultralytics==8.4.218
+# CPU inicial. Conservar la instalación 2.15.0+cpu probada por el usuario.
+torch==2.15.0

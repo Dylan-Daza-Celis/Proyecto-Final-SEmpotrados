@@ -140,3 +140,29 @@ class PruebasAdquisidor(unittest.TestCase):
         self.assertIsNotNone(adquisidor.obtener_estado().captura)
         self.assertFalse(adquisidor.obtener_estado().conectado)
         self.assertEqual(adquisidor.obtener_estado().secuencia, 1)
+
+    def test_status_correcto_no_borra_error_de_captura_http_503(self):
+        from camera_client import captura_vigente
+        cliente = Mock()
+        cliente.__enter__ = Mock(return_value=cliente)
+        cliente.__exit__ = Mock()
+        adquisidor = Adquisidor('camara.invalid', self.configuracion(), fabrica_cliente=lambda *a, **k: cliente)
+        original = captura_ejemplo()
+        def estado():
+            if cliente.consultar_estado.call_count == 3:
+                adquisidor.detener.set()
+            return {'camera_ready': True}
+        def capturar(_):
+            if cliente.capturar.call_count == 1:
+                return original
+            adquisidor.pausado.set()
+            raise ErrorCamara('HTTP 503 en /capture', 'http')
+        cliente.consultar_estado.side_effect = estado
+        cliente.capturar.side_effect = capturar
+        adquisidor.start(); adquisidor.join(timeout=2)
+        self.assertFalse(adquisidor.is_alive())
+        resultado = adquisidor.obtener_estado()
+        self.assertTrue(resultado.conectado)  # HTTP responde; el JPEG sigue inválido.
+        self.assertTrue(resultado.error_captura)
+        self.assertIs(resultado.captura, original)
+        self.assertFalse(captura_vigente(resultado, original, 30))

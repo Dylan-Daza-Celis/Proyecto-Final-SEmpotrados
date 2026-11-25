@@ -17,3 +17,9 @@ roi.json
 *.onnx
 *.h5
 *.tflite
+runs/
+/diagnosticos/*
+!/diagnosticos/.gitkeep
+/evaluaciones/
+.ultralytics/
+*.invalidada
