@@ -74,7 +74,7 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   aún train/val/test ni guardar diagnósticos sobre las imágenes de entrenamiento.
 - Pruebas de cliente con HTTP simulado/JPEG locales y pruebas de geometría/guardado.
   No marcar Wi-Fi/HTTP/calidad visual/calibración real como probados sin evidencia.
-- Tarea actual 04: integrar YOLO11x preentrenado local en Vision_Artificial, sin
+- Tarea 04: integrar YOLO11x preentrenado local en Vision_Artificial, sin
   modificar ningún firmware, sin entrenamiento, nuevo dataset ni UDP. El usuario
   confirmó la aplicación y experimentó con modelos; eligió YOLO11x y SVGA 800x600.
 - Conservar entorno: Python 3.11.15, Ultralytics 8.4.218, PyTorch 2.15.0+cpu.
@@ -102,6 +102,15 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   ROI deben reconfirmarse y guardarse para recuperar validez. agnostic_nms booleano
   explícito. Evaluación con SHA-256, duplicados entre usos, versiones y hashes de
   pesos/calibración; distinguir tiempos locales de HTTP. Mantener rama y PR #4.
+- Tarea actual 05 B: implementar únicamente controlador C6 autónomo en C/ESP-IDF
+  v6.0.2/FreeRTOS, sin modificar cámara/visión, sin UDP ni prioridad dinámica.
+  GPIO provisionales 2/3/10 y 11/18/19; confirmar variante/placa antes de habilitar
+  salidas (SiP puede no exponer 10/11). Evitar arranque/USB/flash/consola y duplicados.
+  Un solo propietario, driver centralizado, precarga segura, estados 5/2/1 s y
+  despertares tardíos sin recortar despejes. Fallos: intentar ambos rojos y bloquear.
+  Demanda simulada configurable mediante cola de un valor; no altera tiempos.
+  Pruebas C con GPIO inyectado y compilación real; prueba física a cargo del usuario.
+  Rama feat/c6-traffic-light-controller desde cb305f7, PR separado del bloque A.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.

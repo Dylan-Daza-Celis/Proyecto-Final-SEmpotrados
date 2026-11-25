@@ -1,5 +1,10 @@
 # Semáforo inteligente — Sistemas Empotrados
 
+Tarea 05 B: [controlador ESP32-C6](Proyecto_Final_C6/README.md) con ciclo autónomo,
+GPIO centralizados, FreeRTOS, cola de demanda simulada y pruebas C sin placa.
+Compilación real ESP-IDF v6.0.2/esp32c6 correcta; cableado y prueba física pendientes.
+El bloque neuronal se revisa por separado en el PR #5; esta rama no lo incorpora.
+
 Proyecto final universitario sobre una maqueta de **45 × 44 cm** con intersección
 en Y. Dos entradas comparten una salida. La cantidad de vehículos de juguete en
 cada entrada determinará su prioridad; cada vehículo tiene el mismo peso.
@@ -47,7 +52,7 @@ Hubo dos avisos NO-SOI iniciales; la inspección visual de fotografías sigue pe
 | Carpeta | Target | Responsabilidad | Estado |
 | --- | --- | --- | --- |
 | `Proyecto_Final_Cam/` | `esp32` | Captura y envío HTTP de imágenes | 1.1 probada físicamente; 1.2/1.3 implementadas, validación física pendiente |
-| `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Plantilla existente, sin cambios |
+| `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Ciclo fijo 5/2/1 s implementado y compilado; placa/pines y prueba física pendientes |
 | `Vision_Artificial/` | Python 3.11 en computadora | Cliente HTTP, YOLO11x y ocupación por ROI | Aplicación de visión probada por el usuario; integración 04 verificada con pruebas y JPEG local, evaluación de exactitud pendiente |
 
 La **tarea 02 (prácticas 1.2/1.3)** añade estación Wi-Fi de 2.4 GHz y una página
@@ -98,7 +103,7 @@ demostrada**. Ver [guía de ejecución/evaluación](Vision_Artificial/README.md)
 | 1.4 | Cliente/visualizador confirmados por el usuario; controles de vigencia y ROI corregidos en 04 |
 | 2.1 | Dataset propio y entrenamiento pospuestos |
 | 2.2–2.3 | YOLO11x y conteo por ROI implementados; evaluación física de exactitud pendiente |
-| 3.1–3.4 | GPIO C6, estados, prioridades simuladas y organización FreeRTOS |
+| 3.1–3.4 | GPIO C6, estados, FreeRTOS y demanda simulada implementados; prioridad dinámica pendiente |
 | 4.1–4.3 | UDP, integración y validación de modo seguro |
 | 5.1–5.2 | Experimentos, documentación y demostración |
 
