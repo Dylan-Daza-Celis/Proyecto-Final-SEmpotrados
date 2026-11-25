@@ -102,7 +102,7 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   ROI deben reconfirmarse y guardarse para recuperar validez. agnostic_nms booleano
   explícito. Evaluación con SHA-256, duplicados entre usos, versiones y hashes de
   pesos/calibración; distinguir tiempos locales de HTTP. Mantener rama y PR #4.
-- Tarea actual 05 B: implementar únicamente controlador C6 autónomo en C/ESP-IDF
+- Tarea 05 B: implementar únicamente controlador C6 autónomo en C/ESP-IDF
   v6.0.2/FreeRTOS, sin modificar cámara/visión, sin UDP ni prioridad dinámica.
   GPIO provisionales 2/3/10 y 11/18/19; confirmar variante/placa antes de habilitar
   salidas (SiP puede no exponer 10/11). Evitar arranque/USB/flash/consola y duplicados.
@@ -111,6 +111,16 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   Demanda simulada configurable mediante cola de un valor; no altera tiempos.
   Pruebas C con GPIO inyectado y compilación real; prueba física a cargo del usuario.
   Rama feat/c6-traffic-light-controller desde cb305f7, PR separado del bloque A.
+- Tarea actual 06 B: prioridad pura C con D=N1-N2, umbral2, incremento2000 ms,
+  verde5000..13000 ms; validar configuración y cota nominal maxverde+2amarillos+
+  2rojos <=20000 ms. Definir sin verde desde fin propio hasta próximo inicio propio
+  (nominal máximo19000 ms). Alternancia obligatoria incluso demanda cero.
+  Elegir demanda vigente al entrar y congelar duración; no reiniciar temporizador.
+  Invalidación nueva consume secuencia e invalida anterior; duplicada/fuera de
+  orden no rehabilita. Ausencia/caducidad vuelve al mínimo en demostración, no es
+  medición0/0. Mantener modo convencional, GPIO corregido primero en PR #6 y un
+  solo propietario. Sin UDP/Wi-Fi ni YOLO. Rama feat/c6-adaptive-traffic-priority
+  contra feat/c6-traffic-light-controller, independiente de diagnóstico PR #5.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.
@@ -129,7 +139,7 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
 
 `D = N1 - N2`; D ≥ 2 favorece carril 1, D ≤ -2 favorece carril 2,
 |D| < 2 implica alternancia convencional. Parámetros configurables: verde mínimo
-5 s, máximo 15 s, amarillo 2 s, rojo total 1 s, espera máxima objetivo 20 s.
+5 s, máximo 13 s, amarillo 2 s, rojo total 1 s, intervalo sin verde objetivo 20 s.
 Verificar coherencia temporal y evitar inanición antes de integrar. Nunca ambos
 verdes simultáneamente. Pérdida de datos válidos: transición controlada a ambos rojos.
 

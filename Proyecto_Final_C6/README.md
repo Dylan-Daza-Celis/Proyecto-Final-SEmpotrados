@@ -1,8 +1,9 @@
 # ESP32-C6: dos semáforos en demostración autónoma
 
-ESP-IDF nativo v6.0.2, C y FreeRTOS. Esta tarea ejecuta ciclo fijo: verde 5 s,
-amarillo 2 s, ambos rojos 1 s, verde del otro carril 5 s. El inicio mantiene ambos
-rojos 1 s. No hay UDP, conexión a YOLO ni prioridad dinámica. No cambia la cámara.
+ESP-IDF nativo v6.0.2, C y FreeRTOS. Conserva el modo convencional 5/2/1 s y añade
+[prioridad adaptativa simulada de tarea 06](PRIORIDAD06.md), verde 5..13 s con
+alternancia obligatoria y despejes completos. El inicio mantiene ambos rojos 1 s.
+No hay UDP, Wi-Fi de C6 ni conexión a YOLO. No cambia la cámara.
 
 ## Placa y cableado provisionales
 
@@ -84,21 +85,19 @@ La cola usa xQueueOverwrite y conserva solo el último valor. El propietario val
 0..1000 vehículos, validez, secuencia estrictamente creciente y edad local ≤5 s,
 sin timestamps futuros. La secuencia no se reinicia durante el mismo arranque;
 antes de un futuro protocolo habrá que definir reinicios, sesiones y wrap-around.
-Los valores solo se registran: **no alteran los tiempos verdes**.
+En modo convencional no alteran los tiempos; en adaptativo se usan solo al entrar
+al siguiente verde. El simulador actual recorre los escenarios de PRIORIDAD06.md,
+incluyendo invalidación y caducidad; sustituye la pareja constante de tarea 05.
 
 Modo actual: demostración autónoma, opera sin datos externos. El futuro modo
 conectado deberá detectar ausencia/caducidad y pedir la transición controlada a
 ambos rojos. La API lógica ya admite esa solicitud, pero no se implementa un
 receptor UDP ficticio ni se presenta este modo como conectado.
 
-Prioridad futura propuesta: D=N1−N2, umbral ±2; verde mínimo 5 s/máximo 15 s,
-amarillo 2 s, rojo total 1 s y espera máxima objetivo 20 s. Antes de implementarla
-se debe definir si la espera empieza al llegar al ROI, al recibir conteos o al
-cerrar el carril, y demostrar compatibilidad de todos los límites. Un verde de
-15 s más despejes puede hacer incompatible un objetivo de espera de 20 s: desde
-el fin de su verde hasta el siguiente verde serían 2+1+15+2+1=21 s en ese caso.
-Definir la espera y revisar límites antes de integrar. No se promete ese máximo
-ni se implementa prioridad.
+La tarea 06 define el intervalo sin verde desde el fin del verde propio hasta el
+siguiente inicio propio. Con verde máximo 13 s, la cota nominal es 19 s; 15 s
+produciría 21 s y se rechaza para objetivo 20 s. No es garantía física de tiempo
+real. Ver fórmula, validación, escenarios y pruebas en PRIORIDAD06.md.
 
 ## Compilar y programar desde VS Code
 
@@ -106,7 +105,7 @@ Abrir terminal con «ESP-IDF: Open ESP-IDF Terminal» y trabajar en este proyect
 
 ```powershell
 idf.py --version
-idf.py set-target esp32c6
+$env:IDF_TARGET = 'esp32c6'
 idf.py menuconfig
 idf.py build
 idf.py -p COMx -b 115200 flash monitor
@@ -131,8 +130,10 @@ compilador RISC-V que produce firmware para la placa:
 Si la política local impide ejecutar scripts, compilar directamente sin cambiarla:
 
 ```powershell
-gcc -std=c99 -Wall -Werror -Imain tests/pruebas_controlador.c main/controlador_semaforos.c main/semaforo_gpio.c -o pruebas.exe
+gcc -std=c99 -Wall -Werror -Imain tests/pruebas_controlador.c main/controlador_semaforos.c main/semaforo_gpio.c main/prioridad_vehicular.c main/gestor_demanda.c -o pruebas.exe
 .\pruebas.exe
+gcc -std=c99 -Wall -Werror -Imain tests/pruebas_prioridad.c main/controlador_semaforos.c main/prioridad_vehicular.c main/gestor_demanda.c -o prioridad.exe
+.\prioridad.exe
 ```
 
 Sustituir gcc por la ruta real del compilador anfitrión instalado. En esta sesión
