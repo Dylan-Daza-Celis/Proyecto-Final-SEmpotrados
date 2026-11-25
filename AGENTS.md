@@ -40,7 +40,7 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   (target `esp32c6`). No crear proyectos duplicados.
 - Práctica 1.1: solo inicialización de cámara y captura JPEG periódica. No modificar
   firmware C6 ni agregar Wi-Fi, HTTP, visión, UDP o controlador de semáforos aquí.
-- Tarea actual 02 (1.2/1.3): Wi-Fi STA de 2.4 GHz y servidor HTTP oficial con
+- Tarea 02 (1.2/1.3): Wi-Fi STA de 2.4 GHz y servidor HTTP oficial con
   GET /, GET /capture, GET /status y POST /control. Reutilizar cámara; un mutex
   protege adquisición/envío/reconfiguración. No mantener el bucle periódico 1.1
   compitiendo con HTTP. Conservar su función de diagnóstico.
@@ -58,6 +58,21 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   solicitudes secuenciales, pausa de 1 s y liberación de object URLs reemplazadas.
   Verificar SOI/EOI y decodificación en navegador. Estabilización limitada y visible.
 - La C6, redes neuronales y comunicación UDP de la aplicación siguen fuera de alcance.
+- Tarea actual 03 (1.4): implementar exclusivamente en Vision_Artificial/ el cliente
+  Python 3.11 con OpenCV, NumPy y Requests, visualizador, dos ROI y recopilación de
+  JPEG originales. No modificar ningún firmware en esta tarea.
+- Venv propio, separado de ESP-IDF; config.json, roi.json, capturas y dataset real
+  ignorados. No usar VideoCapture sobre /capture: es una fotografía individual.
+  Respetar Content-Type, X-Capture-Id y campos reales de /status.
+- Un solo hilo de adquisición y buzón de última imagen, sin colas ilimitadas;
+  ventana responsiva y foto antigua claramente marcada en desconexiones.
+- ROI manuales normalizadas, con resolución de referencia, sin coordenadas
+  definitivas inventadas. Rechazar degeneraciones, cruces y solapamientos/contacto.
+  Recalibrar ante cambios de orientación, perspectiva o campo visual.
+- Guardar bytes originales, nombres únicos, sesión, hash y metadatos; no repartir
+  aún train/val/test ni guardar diagnósticos sobre las imágenes de entrenamiento.
+- Pruebas de cliente con HTTP simulado/JPEG locales y pruebas de geometría/guardado.
+  No marcar Wi-Fi/HTTP/calidad visual/calibración real como probados sin evidencia.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.
@@ -91,7 +106,10 @@ verdes simultáneamente. Pérdida de datos válidos: transición controlada a am
   sustituir COMx por el puerto real.
 - Trabajar en rama independiente, por ejemplo `feat/camera-capture-1-1`, nunca
   directamente en `master`. No eliminar archivos existentes sin justificar.
-- Preparar PR hacia `master`. Entregar archivos creados/modificados, implementación,
+- En tarea 03 partir de la implementación HTTP; si PR #2 sigue abierto, preparar
+  PR contra feat/camera-http-1-2-1-3 para mostrar solo los cambios nuevos. Tras su
+  integración se podrá cambiar la base a master. No fusionar PR sin autorización.
+- Entregar archivos creados/modificados, implementación,
   decisiones, compilación real, pasos de prueba, pendientes y aceptación alcanzada.
 
 Fuentes: https://github.com/espressif/esp32-camera,

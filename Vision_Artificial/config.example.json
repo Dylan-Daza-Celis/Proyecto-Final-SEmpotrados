@@ -1,0 +1,10 @@
+{
+  "url_base": "",
+  "timeout_conexion_s": 3.0,
+  "timeout_lectura_s": 15.0,
+  "intervalo_captura_s": 1.0,
+  "reintentos": 2,
+  "pausa_reintento_s": 1.0,
+  "directorio_almacenamiento": "capturas",
+  "ruta_roi": "roi.json"
+}
