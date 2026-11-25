@@ -1,5 +1,14 @@
 # Semáforo inteligente — Sistemas Empotrados
 
+Tarea 06 A: [diagnóstico neuronal](Vision_Artificial/DIAGNOSTICO06.md), comparación
+entre versiones y umbrales sobre los mismos JPEG; 69 pruebas Python. Los cambios
+de prioridad C6 se revisan en una rama independiente, sin comunicación UDP.
+
+Tarea 05 A: [optimización y comparación de YOLO11x](Vision_Artificial/OPTIMIZACION.md).
+Se conservan pesos, SVGA y parámetros locales; PyTorch continúa como referencia.
+Benchmark reproducible de hilos/ONNX, calentamiento y 65 pruebas de visión. La
+selección de motor y su precisión final requieren escenas independientes anotadas.
+
 Proyecto final universitario sobre una maqueta de **45 × 44 cm** con intersección
 en Y. Dos entradas comparten una salida. La cantidad de vehículos de juguete en
 cada entrada determinará su prioridad; cada vehículo tiene el mismo peso.
@@ -81,7 +90,7 @@ reciente y publica cajas/conteos unidos a esa misma imagen. ROI incoherentes,
 desconexión, fotos antiguas o errores invalidan el resultado; nunca equivalen a
 cero vehículos. Incluye mediana opcional de tres resultados y evaluación local.
 
-Seguimiento: **60 pruebas automatizadas correctas**; inferencia real con pesos
+Seguimiento: **65 pruebas automatizadas correctas**; inferencia real con pesos
 locales sobre una imagen sintética y un JPEG local SVGA. En este último YOLO
 produjo cuatro predicciones car en unos 4.35 s; no son conteos reales verificados.
 La calibración local de referencia 320 × 240 se conserva y exige reconfirmar ambas

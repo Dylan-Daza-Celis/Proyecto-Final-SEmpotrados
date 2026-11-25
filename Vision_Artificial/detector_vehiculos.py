@@ -8,7 +8,8 @@ import numpy as np
 
 CLASES_COCO = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 PARAMETROS_INICIALES = dict(pesos="yolo11x.pt", dispositivo="cpu", imgsz=960,
-                           confianza=0.15, iou=0.45, clases=[2, 3, 5, 7], agnostic_nms=False)
+                           confianza=0.15, iou=0.45, clases=[2, 3, 5, 7], agnostic_nms=False,
+                           backend="pytorch", modelo_exportado="", hilos_cpu=0, hilos_interop=0, hilos_opencv=0)
 
 
 class ErrorDeteccion(RuntimeError):
@@ -19,6 +20,13 @@ def validar_parametros(parametros):
     if not isinstance(parametros, dict) or set(parametros) - set(PARAMETROS_INICIALES):
         raise ValueError("Parámetros neuronales desconocidos.")
     salida = PARAMETROS_INICIALES | parametros
+    if salida['backend'] not in ('pytorch', 'onnx', 'openvino'):
+        raise ValueError('Backend desconocido; no se sustituye automáticamente.')
+    for clave in ('hilos_cpu', 'hilos_interop', 'hilos_opencv'):
+        if type(salida[clave]) is not int or not 0 <= salida[clave] <= 64:
+            raise ValueError(f'{clave}: entero 0..64; 0 conserva el valor original.')
+    if not isinstance(salida['modelo_exportado'], (str, Path)):
+        raise ValueError('modelo_exportado debe ser una ruta local.')
     if type(salida["agnostic_nms"]) is not bool:
         raise ValueError("agnostic_nms debe ser booleano.")
     for clave in ("confianza", "iou"):
@@ -89,14 +97,48 @@ class DetectorVehiculos:
         self.ruta = Path(self.parametros["pesos"]).resolve()
         if not self.ruta.is_file():
             raise ErrorDeteccion(f"No existen los pesos locales: {self.ruta}. No se descargan automáticamente.")
+        self.clase_predictor = None
         if fabrica_modelo is None:
+            from motores_inferencia import configurar_cpu
+            configurar_cpu(self.parametros)
+            if self.parametros['backend'] != 'pytorch':
+                from motores_inferencia import MotorExportado
+                self.exportado = MotorExportado(self.parametros)
+                self.nombres = self.exportado.nombres
+                self.forma_entrada = None
+                self.tiempos = {}
+                return
             # Importación diferida: el visualizador y las pruebas base funcionan sin IA.
             from ultralytics import YOLO
+            from ultralytics.models.yolo.detect import DetectionPredictor
+            detector = self
+            class PredictorFP32(DetectionPredictor):
+                def setup_model(self, *args, **kwargs):
+                    super().setup_model(*args, **kwargs)
+                    # select_device restablece hilos en 8. Aplicar la selección antes del primer forward.
+                    configurar_cpu(detector.parametros)
+
+                def preprocess(self, imagenes):
+                    tensor = super().preprocess(imagenes)
+                    detector.forma_entrada = tuple(tensor.shape)
+                    if str(tensor.dtype) != 'torch.float32':
+                        raise ErrorDeteccion('La comparación exige FP32.')
+                    return tensor
+            self.clase_predictor = PredictorFP32
             fabrica_modelo = YOLO
         self.modelo = fabrica_modelo(str(self.ruta))
+        self.exportado = None
+        self.forma_entrada = None
+        self.tiempos = {}
         self.nombres = self.modelo.names
         if any(self.nombres.get(c) != CLASES_COCO[c] for c in self.parametros["clases"]):
             raise ErrorDeteccion("Los nombres del modelo no coinciden con las clases COCO autorizadas.")
+
+    def calentar(self, repeticiones, detener):
+        for _ in range(repeticiones):
+            if detener.is_set():
+                break
+            self.detectar(np.zeros((600, 800, 3), np.uint8))
 
     def detectar(self, imagen):
         if (not isinstance(imagen, np.ndarray) or imagen.dtype != np.uint8 or
@@ -104,10 +146,17 @@ class DetectorVehiculos:
             raise ErrorDeteccion("Se requiere una fotografía BGR uint8 válida.")
         inicio = time.perf_counter()
         try:
+            if self.exportado is not None:
+                filas = self.exportado.predecir(imagen)
+                self.forma_entrada = self.exportado.forma_entrada
+                self.tiempos = self.exportado.tiempos
+                return filtrar_filas(filas, (imagen.shape[1], imagen.shape[0]), self.parametros, self.nombres), time.perf_counter()-inicio
             resultados = self.modelo.predict(source=imagen, device=self.parametros["dispositivo"],
                 imgsz=self.parametros["imgsz"], conf=self.parametros["confianza"], iou=self.parametros["iou"],
                 classes=self.parametros["clases"], agnostic_nms=self.parametros["agnostic_nms"],
-                verbose=False, save=False, stream=False)
+                verbose=False, save=False, stream=False, rect=True,
+                **({'predictor': self.clase_predictor} if self.clase_predictor else {}))
+            self.tiempos = getattr(resultados[0], 'speed', {})
             if len(resultados) != 1 or tuple(resultados[0].orig_shape) != tuple(imagen.shape[:2]):
                 raise ErrorDeteccion("YOLO no devolvió las coordenadas de la fotografía original.")
             filas = resultados[0].boxes.data.cpu().numpy()

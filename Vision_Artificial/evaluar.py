@@ -164,17 +164,23 @@ def main(argumentos=None):
     parser.add_argument("--escenas", type=Path, default=RAIZ / "evaluaciones/escenas.csv")
     parser.add_argument("--salida", type=Path, default=RAIZ / "evaluaciones/resumen.json")
     parser.add_argument("--uso", choices=("desarrollo", "final"), default="desarrollo")
+    parser.add_argument('--candidato-b',action='store_true',help='Probar 960/.10/.45/NMS false en desarrollo; no cambia config.json')
     parser.add_argument("--registrar", type=Path, help="Añadir una fotografía y conteos manuales al CSV")
     parser.add_argument("--n1", type=int)
     parser.add_argument("--n2", type=int)
     parser.add_argument("--grupo", help="Sesión/escena; no mezclar casi duplicados con evaluación final")
     args = parser.parse_args(argumentos)
+    if args.candidato_b and (args.uso!='desarrollo' or args.registrar):
+        parser.error('El candidato B solo permite evaluar escenas de desarrollo ya anotadas.')
     try:
         if args.registrar:
             registrar_escena(args.escenas, args.registrar, args.n1, args.n2, args.grupo, args.uso)
             print("Escena registrada; no se ha ejecutado inferencia ni copiado la fotografía.")
             return 0
         configuracion = cargar_configuracion(args.config, requiere_url=False)
+        if args.candidato_b:
+            configuracion['detector'].update(backend='pytorch',dispositivo='cpu',imgsz=960,
+                confianza=.10,iou=.45,agnostic_nms=False)
         if args.pesos:
             configuracion["detector"]["pesos"] = args.pesos.resolve()
         escenas = [f for f in leer_escenas(args.escenas) if f["uso"] == args.uso]
@@ -186,10 +192,13 @@ def main(argumentos=None):
         detector = DetectorVehiculos(configuracion["detector"])
         reproducibilidad = metadatos_reproducibilidad(configuracion["detector"]["pesos"],
                                                      args.roi or configuracion["ruta_roi"])
+        reproducibilidad['backend'] = configuracion['detector']['backend']
+        if configuracion['detector']['backend'] != 'pytorch':
+            reproducibilidad['modelo_exportado_sha256'] = huella_archivo(configuracion['detector']['modelo_exportado'])
         registros, duracion = evaluar_escenas(escenas, regiones, detector)
         informe = {"fecha_utc": datetime.now(timezone.utc).isoformat(), "uso": args.uso,
                    "reproducibilidad": reproducibilidad,
-                   "parametros": configuracion["detector"] | {"pesos": str(configuracion["detector"]["pesos"])},
+                   "parametros": {k: str(v) if isinstance(v, Path) else v for k,v in configuracion['detector'].items()},
                    "metricas": calcular_metricas(registros, duracion), "escenas": registros,
                    "latencia": {"inferencia_s": "predict local y validación de cajas; sin HTTP",
                        "latencia_s": "lectura JPEG, hash, decodificación, inferencia y conteo; sin HTTP ni carga del modelo",

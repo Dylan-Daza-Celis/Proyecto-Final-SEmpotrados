@@ -46,6 +46,10 @@ def cargar_configuracion(ruta, url=None, requiere_url=True):
             raise ValueError(f"{clave} debe ser booleano.")
     configuracion["detector"] = validar_parametros(configuracion["detector"])
     configuracion["detector"]["pesos"] = (ruta.parent / configuracion["detector"]["pesos"]).resolve()
+    if configuracion['detector']['modelo_exportado']:
+        configuracion['detector']['modelo_exportado'] = (ruta.parent / configuracion['detector']['modelo_exportado']).resolve()
+    if type(configuracion['calentamiento_inferencias']) is not int or not 0 <= configuracion['calentamiento_inferencias'] <= 10:
+        raise ValueError('calentamiento_inferencias debe estar entre 0 y 10.')
     for clave in ("directorio_almacenamiento", "ruta_roi", "directorio_diagnosticos"):
         if not isinstance(configuracion[clave], str) or not configuracion[clave].strip():
             raise ValueError(f"{clave} debe ser una ruta no vacía.")
@@ -76,6 +80,9 @@ class Visualizador:
         self.limite_imagen = self.configuracion.get("max_antiguedad_imagen_s", 6.0)
         self.limite_resultado = self.configuracion.get("max_antiguedad_resultado_s", 12.0)
         self.mensaje = "Esperando una fotografia. 1/2: editar ROI sobre imagen pausada."
+        self.invalidada_desde = None
+        self.referencia_recalibracion = None
+        self.epoca_recalibracion = None
 
     def raton(self, evento, x, y, _banderas, _parametro):
         if self.activa is None or self.captura is None:
@@ -109,7 +116,10 @@ class Visualizador:
                 self.trabajador.start()
         elif tecla in (ord("v"), ord("V")):
             self.regiones.invalidar_calibracion()
-            self.mensaje = "Calibracion invalidada. Reconfirmar ambas ROI sobre el encuadre actual."
+            self.invalidada_desde = time.monotonic()
+            self.referencia_recalibracion = None
+            self._pausar(False)
+            self.mensaje = "Calibracion invalidada. Esperar captura nueva valida antes de editar ambas ROI."
         elif tecla in (ord("c"), ord("C")):
             self.mostrar_cajas = not self.mostrar_cajas
         elif tecla in (ord("o"), ord("O")):
@@ -127,9 +137,23 @@ class Visualizador:
             self._pausar(not self.pausa)
             self.mensaje = "Pausada; /status sigue comprobando conexion." if self.pausa else "Visualizacion reanudada."
         elif tecla in (ord("1"), ord("2")):
+            if self.invalidada_desde is not None and self.referencia_recalibracion is None:
+                estado = self.adquisidor.obtener_estado()
+                candidata = estado.captura
+                if (not captura_vigente(estado,candidata,self.limite_imagen) or
+                        candidata.origen_monotonic <= self.invalidada_desde):
+                    self.mensaje = 'Esperar captura valida iniciada despues de V.'
+                    return True
+                self.captura = candidata
+                self.secuencia = estado.secuencia
+                self.referencia_recalibracion = candidata
+                self.epoca_recalibracion = estado.epoca
             if self.captura is None:
                 self.mensaje = "Primero debe recibirse una fotografia."
             else:
+                if self.referencia_recalibracion is None:
+                    self.referencia_recalibracion = self.captura
+                    self.epoca_recalibracion = self.adquisidor.obtener_estado().epoca
                 self._pausar(True)
                 self.activa = int(chr(tecla))
                 resolucion = (self.captura.imagen.shape[1], self.captura.imagen.shape[0])
@@ -141,6 +165,7 @@ class Visualizador:
             self.mensaje = f"ROI {self.activa} borrada en memoria; seleccione sus vertices."
         elif tecla in (10, 13) and self.activa and self.captura is not None:
             try:
+                self._validar_referencia_recalibracion()
                 alto, ancho = self.captura.imagen.shape[:2]
                 self.regiones.establecer(self.activa, self.borrador, (ancho, alto))
                 self.mensaje = f"ROI {self.activa} confirmada. G guarda ambas; Espacio reanuda."
@@ -152,21 +177,38 @@ class Visualizador:
             try:
                 if self.activa is not None:
                     raise ValueError("Confirme el poligono activo con Enter antes de guardar.")
+                self._validar_referencia_recalibracion()
                 self.regiones.guardar(self.ruta_roi)
+                self.invalidada_desde = None
+                self.referencia_recalibracion = None
+                self.epoca_recalibracion = None
                 self.mensaje = "ROI guardadas. Recalibre si cambia orientacion, perspectiva o encuadre."
             except (OSError, ValueError) as error:
                 self.mensaje = str(error)
         elif tecla in (ord("s"), ord("S")):
             estado = self.adquisidor.obtener_estado()
-            if not captura_vigente(estado, self.captura, self.limite_imagen):
+            historica = self.pausa and self.captura is not None
+            if not historica and not captura_vigente(estado, self.captura, self.limite_imagen):
                 self.mensaje = "No se guarda: sin fotografia o conexion reciente confirmada."
             else:
                 try:
-                    ruta = self.almacenamiento.guardar(self.captura)
-                    self.mensaje = "Original guardado: " + ruta.name
+                    ruta = (self.almacenamiento.guardar(self.captura, referencia_historica=True) if historica
+                            else self.almacenamiento.guardar(self.captura))
+                    self.mensaje = ("Original HISTORICO, sin validez de control: " if historica else "Original guardado: ") + ruta.name
                 except (OSError, ValueError) as error:
                     self.mensaje = str(error)
         return True
+
+    def _validar_referencia_recalibracion(self):
+        """La foto pausada puede envejecer; su conexión y contexto deben seguir confirmados."""
+        estado = self.adquisidor.obtener_estado()
+        referencia = self.referencia_recalibracion
+        if (referencia is None or self.captura is not referencia or not self.pausa or
+                not estado.conectado or estado.error_captura or estado.epoca != self.epoca_recalibracion or
+                not 0 <= time.monotonic()-estado.confirmada_monotonic <= self.limite_imagen or
+                (self.invalidada_desde is not None and referencia.origen_monotonic <= self.invalidada_desde) or
+                (estado.captura is not None and estado.captura.imagen.shape != referencia.imagen.shape)):
+            raise ValueError('Referencia/conexion de recalibracion invalida; obtener nueva captura con V antes de confirmar o guardar.')
 
     def dibujar(self):
         estado = self.adquisidor.obtener_estado()
@@ -238,7 +280,9 @@ class Visualizador:
             lineas.append(f"Inferencia {resultado.inferencia_s:.2f} s | latencia total {resultado.latencia_total_s:.2f} s | edad {time.monotonic()-resultado.captura.origen_monotonic:.1f} s")
         if estado_ia:
             modelo_nombre = Path(self.configuracion.get("detector", {}).get("pesos", "yolo11x.pt")).name
-            lineas.append(f"{modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
+            lineas.append(f"{self.configuracion.get('detector', {}).get('backend', 'pytorch')} {modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
+            if estado_ia.motivo in ('CARGANDO MODELO', 'CALENTANDO MODELO'):
+                lineas[-1] = estado_ia.motivo + ' | ' + lineas[-1]
             lineas.append("D deteccion | C cajas | O ROI | V invalidar calibracion | A diagnostico (S ORIGINAL)")
         self.informacion_diagnostico = (resultado.a_dict(not bool(motivo), motivo) if resultado else
                                       {"valido": False, "motivo": motivo})
@@ -288,7 +332,7 @@ def main(argumentos=None):
             configuracion["deteccion_activa"] = False
         adquisidor = Adquisidor(configuracion["url_base"], configuracion)
         trabajador = TrabajadorInferencia(configuracion["detector"], configuracion["max_antiguedad_resultado_s"],
-                                          configuracion["filtro_mediana"])
+                                          configuracion["filtro_mediana"], calentamiento=configuracion['calentamiento_inferencias'])
         interfaz = Visualizador(adquisidor, regiones, almacenamiento, ruta_roi, configuracion["intervalo_captura_s"],
                                trabajador, configuracion)
         print("Calibración: excluir convergencia y salida. Cambios de cámara/encuadre requieren recalibrar.")
