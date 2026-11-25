@@ -1,0 +1,14 @@
+menu "Semáforo inteligente - conexión local"
+    config PROYECTO_WIFI_SSID
+        string "SSID de la red Wi-Fi de 2.4 GHz"
+        default ""
+        help
+            Introducir localmente. sdkconfig y los binarios contienen este valor;
+            no publicarlos ni copiar credenciales a sdkconfig.defaults.
+
+    config PROYECTO_WIFI_PASSWORD
+        string "Contraseña Wi-Fi (vacía únicamente para una red abierta)"
+        default ""
+        help
+            Credencial local guardada en sdkconfig, ignorado por Git.
+endmenu

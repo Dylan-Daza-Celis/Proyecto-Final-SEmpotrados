@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semáforo inteligente</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#eaf1f6;background:#111b24;color-scheme:dark}
+    body{max-width:1000px;margin:0 auto;padding:24px}h1{margin:0 0 8px}p{line-height:1.5}
+    .panel{background:#1c2c39;border:1px solid #375265;border-radius:12px;padding:20px;margin:18px 0}
+    .controles{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+    button,select,input{font:inherit;padding:10px;border-radius:6px;border:1px solid #64869d}
+    button{background:#1a6573;color:white;cursor:pointer}button:disabled{opacity:.45;cursor:default}
+    label{display:grid;gap:6px}input{width:6em}.estado{color:#8ce0cc}.error{color:#ffb4a8;min-height:1.5em}
+    #foto{display:block;max-width:100%;height:auto;margin:auto}#foto:not([src]){display:none}
+    .datos{display:flex;flex-wrap:wrap;gap:20px}small{color:#b1c7d6}a{color:#a8e6f0}
+  </style>
+</head>
+<body>
+  <header><h1>Semáforo inteligente</h1><small>Laboratorio de cámara · prácticas 1.2 y 1.3</small></header>
+  <section class="panel" aria-label="Estado">
+    <div class="datos"><span id="conexion" class="estado" role="status">Consultando conexión…</span><span>Sensor: <strong id="sensor">—</strong></span><span id="configuracion">—</span></div>
+    <p id="memoria">Esperando datos de la cámara.</p>
+    <p id="error" class="error" role="alert"></p>
+  </section>
+  <section class="panel" aria-label="Controles de imagen">
+    <div class="controles">
+      <button id="capturar">Capturar imagen</button>
+      <button id="iniciar">Iniciar vista continua</button>
+      <button id="detener" disabled>Detener vista continua</button>
+      <button id="descargar" disabled>Descargar imagen JPEG</button>
+    </div>
+    <hr>
+    <form id="ajustes" class="controles">
+      <label for="resolucion">Resolución<select id="resolucion"><option value="QVGA">QVGA · 320 × 240</option><option value="VGA">VGA · 640 × 480</option><option value="SVGA">SVGA · 800 × 600</option></select></label>
+      <label for="calidad">Calidad JPEG<input id="calidad" type="number" min="10" max="40" step="1" value="12" required></label>
+      <button id="aplicar" type="submit">Aplicar ajustes</button>
+    </form>
+    <p><small>Calidad: 10 a 40; un número menor conserva más detalle. Aplicar ajustes detiene la vista continua y puede tardar varios segundos.</small></p>
+  </section>
+  <section class="panel" aria-label="Fotografía">
+    <p id="detalle" role="status">Pulsa Capturar imagen para comprobar la escena.</p>
+    <img id="foto" alt="Última fotografía adquirida por la ESP32-CAM">
+  </section>
+  <script>
+    'use strict';
+    const porId = id => document.getElementById(id);
+    let ocupado = false, continua = false, temporizador = null;
+    let imagenActual = null, identificadorActual = '', primeraConsulta = true;
+
+    function actualizarBotones() {
+      porId('capturar').disabled = ocupado || continua;
+      porId('iniciar').disabled = ocupado || continua;
+      porId('detener').disabled = !continua;
+      porId('aplicar').disabled = ocupado;
+      porId('resolucion').disabled = ocupado;
+      porId('calidad').disabled = ocupado;
+      porId('descargar').disabled = !imagenActual;
+    }
+    async function solicitar(ruta, opciones = {}) {
+      const controlador = new AbortController();
+      const limite = setTimeout(() => controlador.abort(), 30000);
+      try {
+        const respuesta = await fetch(ruta, {...opciones, cache:'no-store', signal:controlador.signal});
+        if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}: ${await respuesta.text()}`);
+        // Consume el cuerpo antes de quitar el timeout.
+        return ruta.startsWith('/capture')
+          ? {blob:await respuesta.blob(), id:respuesta.headers.get('X-Capture-Id')}
+          : await respuesta.json();
+      } finally { clearTimeout(limite); }
+    }
+    function mostrarEstado(estado, sincronizar = false) {
+      porId('conexion').textContent = estado.camera_ready ? 'Conectado · cámara lista' : 'Conectado · cámara detenida';
+      porId('sensor').textContent = estado.sensor;
+      porId('configuracion').textContent = `${estado.width} × ${estado.height} · JPEG · calidad ${estado.quality}`;
+      porId('memoria').textContent = `Capturas correctas: ${estado.captures} · Fallidas: ${estado.capture_errors} · RAM interna libre: ${estado.internal_free} bytes · PSRAM libre: ${estado.psram_free} bytes`;
+      if (sincronizar || primeraConsulta) {
+        porId('resolucion').value = ({320:'QVGA',640:'VGA',800:'SVGA'})[estado.width] || 'QVGA';
+        porId('calidad').value = estado.quality;
+        primeraConsulta = false;
+      }
+    }
+    async function ejecutar(operacion) {
+      if (ocupado) return;
+      ocupado = true;
+      porId('error').textContent = '';
+      actualizarBotones();
+      try { await operacion(); }
+      catch (error) {
+        porId('conexion').textContent = 'Operación fallida · comprueba conexión y cámara';
+        porId('error').textContent = error.name === 'AbortError'
+          ? 'La cámara tardó demasiado. Revisa el monitor serie y vuelve a intentar.'
+          : `No se pudo completar la operación: ${error.message}`;
+        detener();
+      } finally { ocupado = false; actualizarBotones(); }
+    }
+    async function capturar() {
+      porId('detalle').textContent = 'Capturando…';
+      const {blob,id} = await solicitar(`/capture?t=${Date.now()}`);
+      if (blob.type !== 'image/jpeg' || blob.size < 4) throw new Error('La respuesta no es un JPEG válido.');
+      const nuevaUrl = URL.createObjectURL(blob);
+      const prueba = new Image();
+      prueba.src = nuevaUrl;
+      try { await prueba.decode(); }
+      catch (_) { URL.revokeObjectURL(nuevaUrl); throw new Error('El navegador no pudo decodificar la fotografía.'); }
+      const anterior = imagenActual;
+      imagenActual = nuevaUrl;
+      identificadorActual = id || String(Date.now());
+      porId('foto').src = nuevaUrl;
+      if (anterior) URL.revokeObjectURL(anterior);
+      porId('detalle').textContent = `Imagen #${identificadorActual} · ${prueba.naturalWidth} × ${prueba.naturalHeight} · ${blob.size} bytes · ${new Date().toLocaleTimeString()}`;
+      mostrarEstado(await solicitar('/status'));
+    }
+    function detener() {
+      continua = false;
+      clearTimeout(temporizador);
+      actualizarBotones();
+    }
+    async function siguiente() {
+      if (!continua) return;
+      // El siguiente timeout se programa solo al terminar la operación actual.
+      await ejecutar(capturar);
+      if (continua) temporizador = setTimeout(siguiente, 1000);
+    }
+    porId('capturar').addEventListener('click', () => ejecutar(capturar));
+    porId('iniciar').addEventListener('click', () => { if (!ocupado && !continua) { continua = true; actualizarBotones(); siguiente(); } });
+    porId('detener').addEventListener('click', detener);
+    porId('ajustes').addEventListener('submit', evento => {
+      evento.preventDefault();
+      const calidad = Number(porId('calidad').value);
+      if (!Number.isInteger(calidad) || calidad < 10 || calidad > 40) return;
+      detener();
+      ejecutar(async () => {
+        const cuerpo = `resolution=${porId('resolucion').value}&quality=${calidad}`;
+        const estado = await solicitar('/control', {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:cuerpo});
+        mostrarEstado(estado, true);
+        porId('detalle').textContent = 'Ajustes aplicados. Captura una imagen para ver el resultado.';
+      });
+    });
+    porId('descargar').addEventListener('click', () => {
+      if (!imagenActual) return;
+      const enlace = document.createElement('a');
+      enlace.href = imagenActual;
+      enlace.download = `captura-${identificadorActual}.jpg`;
+      enlace.click();
+    });
+    window.addEventListener('pagehide', () => { detener(); if (imagenActual) URL.revokeObjectURL(imagenActual); });
+    ejecutar(async () => mostrarEstado(await solicitar('/status'), true));
+    setInterval(() => { if (!ocupado && !continua) ejecutar(async () => mostrarEstado(await solicitar('/status'))); }, 5000);
+  </script>
+</body>
+</html>
