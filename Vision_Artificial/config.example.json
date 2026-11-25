@@ -6,5 +6,18 @@
   "reintentos": 2,
   "pausa_reintento_s": 1.0,
   "directorio_almacenamiento": "capturas",
-  "ruta_roi": "roi.json"
+  "ruta_roi": "roi.json",
+  "max_antiguedad_imagen_s": 30.0,
+  "max_antiguedad_resultado_s": 30.0,
+  "deteccion_activa": true,
+  "filtro_mediana": true,
+  "directorio_diagnosticos": "diagnosticos",
+  "detector": {
+    "pesos": "yolo11x.pt",
+    "dispositivo": "cpu",
+    "imgsz": 960,
+    "confianza": 0.15,
+    "iou": 0.45,
+    "clases": [2, 3, 5, 7]
+  }
 }

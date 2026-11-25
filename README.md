@@ -48,7 +48,7 @@ Hubo dos avisos NO-SOI iniciales; la inspección visual de fotografías sigue pe
 | --- | --- | --- | --- |
 | `Proyecto_Final_Cam/` | `esp32` | Captura y envío HTTP de imágenes | 1.1 probada físicamente; 1.2/1.3 implementadas, validación física pendiente |
 | `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Plantilla existente, sin cambios |
-| `Vision_Artificial/` | Python 3.11 en computadora | Cliente HTTP, visualizador, calibración ROI y recopilación JPEG | Tarea 03 implementada; pruebas simuladas correctas, prueba física pendiente |
+| `Vision_Artificial/` | Python 3.11 en computadora | Cliente HTTP, YOLO11x y ocupación por ROI | Aplicación de visión probada por el usuario; integración 04 verificada con pruebas y JPEG local, evaluación de exactitud pendiente |
 
 La **tarea 02 (prácticas 1.2/1.3)** añade estación Wi-Fi de 2.4 GHz y una página
 local con captura, descarga JPEG, vista continua, estado y controles validados.
@@ -69,10 +69,25 @@ JPEG originales con metadatos, sin anotaciones. El venv y las configuraciones so
 locales, separados de ESP-IDF. Ver [instalación y controles](Vision_Artificial/README.md).
 La carpeta vacía heredada `Vision Artificial/` se conserva sin cambios.
 
-Seguimiento de la tarea 03: **29 pruebas automatizadas correctas** con Python
-3.11.15, JPEG generados localmente y respuestas HTTP simuladas. No se ha verificado
-recepción real, ventana HighGUI, calibración de la maqueta ni calidad visual.
-El dataset solo tiene estructura preparada; no hay reparto, etiquetas ni detector.
+El usuario confirmó el funcionamiento de la aplicación y probó modelos
+preentrenados. La **tarea 04** integra definitivamente **YOLO11x en CPU**, con foto
+física **800 × 600** e inferencia inicial imgsz=960, confianza=0.15, IoU=0.45 y
+clases COCO 2/3/5/7. No reconfigura automáticamente la cámara. Se conserva el
+guardado de originales; dataset propio y entrenamiento se posponen.
+
+El conteo es ocupación instantánea (N1, N2, fuera, total y D), sin tracking ni
+acumulación. Un trabajador independiente procesa solo la foto pendiente más
+reciente y publica cajas/conteos unidos a esa misma imagen. ROI incoherentes,
+desconexión, fotos antiguas o errores invalidan el resultado; nunca equivalen a
+cero vehículos. Incluye mediana opcional de tres resultados y evaluación local.
+
+Seguimiento: **51 pruebas automatizadas correctas**; inferencia real con pesos
+locales sobre una imagen sintética y un JPEG local SVGA. En este último YOLO
+produjo cuatro predicciones car en unos 4.35 s; no son conteos reales verificados.
+La calibración local de referencia 320 × 240 se conserva y exige reconfirmar ambas
+ROI para SVGA. La meta de **90 % de escenas con ambos conteos correctos no está
+demostrada**. Ver [guía de ejecución/evaluación](Vision_Artificial/README.md) y
+[licencias de IA](Vision_Artificial/LICENCIAS_IA.md).
 
 ## Etapas
 
@@ -80,8 +95,9 @@ El dataset solo tiene estructura preparada; no hay reparto, etiquetas ni detecto
 | --- | --- |
 | 1.1 | Inicialización y captura: usuario confirmó 19 imágenes y memoria estable |
 | 1.2–1.3 | Wi-Fi/HTTP e interfaz implementados; prueba física pendiente |
-| 1.4 | Cliente Python/OpenCV y calibración ROI implementados; pruebas físicas pendientes |
-| 2.1–2.3 | Recopilación original preparada; dataset real, detector neuronal y conteo pendientes |
+| 1.4 | Cliente/visualizador confirmados por el usuario; controles de vigencia y ROI corregidos en 04 |
+| 2.1 | Dataset propio y entrenamiento pospuestos |
+| 2.2–2.3 | YOLO11x y conteo por ROI implementados; evaluación física de exactitud pendiente |
 | 3.1–3.4 | GPIO C6, estados, prioridades simuladas y organización FreeRTOS |
 | 4.1–4.3 | UDP, integración y validación de modo seguro |
 | 5.1–5.2 | Experimentos, documentación y demostración |

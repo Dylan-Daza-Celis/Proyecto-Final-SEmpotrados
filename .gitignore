@@ -1,0 +1,5 @@
+# Salidas de las pruebas neuronales del usuario; conservarlas solo localmente.
+runs/
+*.pt
+*.pth
+*.onnx

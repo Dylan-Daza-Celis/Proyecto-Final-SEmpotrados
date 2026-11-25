@@ -14,6 +14,9 @@ import requests
 
 class ErrorCamara(RuntimeError):
     """Error recuperable de transporte, contrato HTTP o decodificación."""
+    def __init__(self, mensaje, tipo="conexion"):
+        super().__init__(mensaje)
+        self.tipo = tipo
 
 
 def normalizar_url(direccion: str) -> str:
@@ -83,10 +86,10 @@ class ClienteCamara:
                                      headers={"Cache-Control": "no-cache", "Accept": tipo},
                                      stream=True, allow_redirects=False) as respuesta:
                     if respuesta.status_code != 200:
-                        raise ErrorCamara(f"HTTP {respuesta.status_code} en {ruta}.")
+                        raise ErrorCamara(f"HTTP {respuesta.status_code} en {ruta}.", "http")
                     contenido_tipo = respuesta.headers.get("Content-Type", "").split(";")[0].strip().lower()
                     if contenido_tipo != tipo:
-                        raise ErrorCamara(f"Content-Type inesperado en {ruta}: {contenido_tipo!r}.")
+                        raise ErrorCamara(f"Content-Type inesperado en {ruta}: {contenido_tipo!r}.", "captura")
                     contenido = bytearray()
                     # Requests limita inactividad por lectura; añadimos comprobación
                     # de tiempo total entre bloques para una respuesta que llega a gotas.
@@ -113,23 +116,24 @@ class ClienteCamara:
         try:
             estado = json.loads(contenido)
         except (ValueError, UnicodeDecodeError) as error:
-            raise ErrorCamara("/status no contiene JSON válido.") from error
+            raise ErrorCamara("/status no contiene JSON válido.", "http") from error
         if (not isinstance(estado, dict) or type(estado.get("camera_ready")) is not bool or
                 not isinstance(estado.get("sensor"), str)):
-            raise ErrorCamara("/status no respeta el contrato de cámara.")
+            raise ErrorCamara("/status no respeta el contrato de cámara.", "http")
         return estado
 
     def capturar(self, estado=None):
         contenido, identificador, recepcion_s = self._solicitar("/capture", "image/jpeg", 5 * 1024 * 1024)
+        recibida_monotonic = time.monotonic()
         if len(contenido) < 4 or not contenido.startswith(b"\xff\xd8") or not contenido.endswith(b"\xff\xd9"):
-            raise ErrorCamara("JPEG incompleto: faltan SOI/EOI.")
+            raise ErrorCamara("JPEG incompleto: faltan SOI/EOI.", "captura")
         inicio = time.perf_counter()
         try:
             imagen = cv2.imdecode(np.frombuffer(contenido, dtype=np.uint8), cv2.IMREAD_COLOR)
         except cv2.error as error:
-            raise ErrorCamara("OpenCV rechazó el JPEG.") from error
+            raise ErrorCamara("OpenCV rechazó el JPEG.", "captura") from error
         if imagen is None or imagen.ndim != 3 or imagen.shape[2] != 3 or imagen.size == 0:
-            raise ErrorCamara("El contenido no se puede decodificar como fotografía.")
+            raise ErrorCamara("El contenido no se puede decodificar como fotografía.", "captura")
         decodificacion_s = time.perf_counter() - inicio
         imagen.setflags(write=False)  # Las anotaciones se dibujan siempre en una copia.
         calidad = None
@@ -138,7 +142,7 @@ class ClienteCamara:
             if type(valor) is int and 10 <= valor <= 40:
                 calidad = valor
         return Captura(contenido, imagen, identificador, datetime.now(timezone.utc).isoformat(),
-                       time.monotonic(), recepcion_s, decodificacion_s, calidad,
+                       recibida_monotonic, recepcion_s, decodificacion_s, calidad,
                        dict(estado) if estado is not None else None)
 
 
@@ -150,6 +154,16 @@ class EstadoAdquisicion:
     secuencia: int = 0
     confirmada_monotonic: float = 0.0
     frecuencia_hz: float = 0.0
+    error_captura: bool = False
+    epoca: int = 0
+
+
+def captura_vigente(estado, captura, limite_s, ahora=None):
+    """/status confirma transporte, jamás renueva la fecha del JPEG."""
+    ahora = time.monotonic() if ahora is None else ahora
+    return (captura is not None and estado.conectado and not estado.error_captura and
+            0 <= ahora - captura.recibida_monotonic <= limite_s and
+            0 <= ahora - estado.confirmada_monotonic <= limite_s)
 
 
 class Adquisidor(threading.Thread):
@@ -184,7 +198,7 @@ class Adquisidor(threading.Thread):
                     try:
                         estado = cliente.consultar_estado()
                         if not estado["camera_ready"]:
-                            raise ErrorCamara("La cámara informa camera_ready=false.")
+                            raise ErrorCamara("La cámara informa camera_ready=false.", "captura")
                         self._publicar(conectado=True, mensaje="Conectado",
                                        confirmada_monotonic=time.monotonic())
                         if not self.pausado.is_set():
@@ -194,9 +208,13 @@ class Adquisidor(threading.Thread):
                             actual = self.obtener_estado()
                             self._publicar(captura=captura, secuencia=actual.secuencia + 1,
                                            conectado=True, mensaje="Imagen recibida",
-                                           confirmada_monotonic=time.monotonic(), frecuencia_hz=frecuencia)
+                                           confirmada_monotonic=time.monotonic(), frecuencia_hz=frecuencia,
+                                           error_captura=False)
                     except ErrorCamara as error:
-                        self._publicar(conectado=False, mensaje=str(error), frecuencia_hz=0.0)
+                        actual = self.obtener_estado()
+                        self._publicar(conectado=error.tipo != "conexion",
+                                       error_captura=True, mensaje=str(error), frecuencia_hz=0.0,
+                                       epoca=actual.epoca + 1)
                         anterior = None
                     intervalo = self.configuracion["intervalo_captura_s"]
                     self.detener.wait(max(0.05, intervalo - (time.monotonic() - inicio)))

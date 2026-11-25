@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 import uuid
+import copy
 
 import cv2
 import numpy as np
@@ -104,6 +105,42 @@ class GestorROI:
     def __init__(self):
         self.regiones = {}
         self.resolucion_referencia = None
+        self.referencias = {}
+        self.pendientes = set()
+        self.revision = 0
+
+    def observar_resolucion(self, resolucion):
+        """Un cambio de resolución invalida ambas ROI hasta reconfirmarlas."""
+        resolucion = validar_resolucion(resolucion)
+        nuevas = {n for n in self.regiones if self.referencias.get(n) != resolucion}
+        if nuevas - self.pendientes:
+            self.pendientes.update(nuevas)
+            self.revision += 1
+
+    def invalidar_calibracion(self):
+        """Acción explícita tras mover/orientar la cámara sin cambiar resolución."""
+        self.pendientes.update(self.regiones)
+        self.revision += 1
+
+    def estado_calibracion(self, resolucion):
+        if set(self.regiones) != {1, 2}:
+            return "ROI no configuradas"
+        if self.pendientes or any(self.referencias.get(n) != tuple(resolucion) for n in (1, 2)):
+            return "ROI pendientes de recalibracion"
+        try:
+            primero, segundo = (validar_poligono(self.regiones[n]) for n in (1, 2))
+            if _se_solapan(primero, segundo):
+                return "ROI ambiguas o superpuestas"
+        except ValueError:
+            return "ROI invalidas"
+        return ""
+
+    def copiar(self):
+        return copy.deepcopy(self)
+
+    def firma(self):
+        return (self.revision, self.resolucion_referencia, tuple(sorted(self.pendientes)),
+                tuple((n, tuple(map(tuple, p)), self.referencias.get(n)) for n, p in sorted(self.regiones.items())))
 
     def establecer(self, numero, puntos_pixel, resolucion):
         if numero not in (1, 2):
@@ -113,10 +150,17 @@ class GestorROI:
         if otra is not None and _se_solapan(puntos, otra):
             raise ValueError("Las ROI se superponen o se tocan; deje separación entre carriles.")
         self.regiones[numero] = puntos
-        self.resolucion_referencia = validar_resolucion(resolucion)
+        self.referencias[numero] = validar_resolucion(resolucion)
+        self.pendientes.discard(numero)
+        self.revision += 1
+        if self.resolucion_referencia is None or all(r == tuple(resolucion) for r in self.referencias.values()):
+            self.resolucion_referencia = tuple(resolucion)
 
     def borrar(self, numero):
         self.regiones.pop(numero, None)
+        self.referencias.pop(numero, None)
+        self.pendientes.discard(numero)
+        self.revision += 1
 
     def puntos_pixel(self, numero, resolucion):
         return reconstruir_puntos(self.regiones.get(numero, []), resolucion)
@@ -134,6 +178,8 @@ class GestorROI:
     def guardar(self, ruta):
         if set(self.regiones) != {1, 2} or self.resolucion_referencia is None:
             raise ValueError("Confirme las dos ROI antes de guardar la calibración.")
+        if self.estado_calibracion(self.resolucion_referencia):
+            raise ValueError("Reconfirme ambas ROI sobre la misma resolución antes de guardar.")
         datos = {"version": 1, "resolucion_referencia": list(self.resolucion_referencia),
                  "rois": {str(numero): puntos for numero, puntos in self.regiones.items()}}
         ruta = Path(ruta)
@@ -156,6 +202,7 @@ class GestorROI:
         if not isinstance(regiones, dict) or set(regiones) != {"1", "2"}:
             raise ValueError("El archivo debe contener exactamente ROI 1 y ROI 2.")
         gestor.regiones = {int(numero): validar_poligono(puntos) for numero, puntos in regiones.items()}
+        gestor.referencias = {numero: gestor.resolucion_referencia for numero in gestor.regiones}
         if _se_solapan(gestor.regiones[1], gestor.regiones[2]):
             raise ValueError("Las ROI guardadas se superponen o se tocan.")
         return gestor

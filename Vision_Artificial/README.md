@@ -1,270 +1,329 @@
-# Tarea 03 — Cliente Python y calibración de dos ROI
+# Tarea 04 — YOLO11x y ocupación vehicular por ROI
 
-Práctica **1.4**: recibe fotografías individuales de la ESP32-CAM por HTTP,
-decodifica con OpenCV, permite dibujar dos polígonos y guarda JPEG originales
-para el futuro dataset. No realiza detección de vehículos, entrenamiento ni UDP.
+Aplicación Windows/Python que conserva cliente HTTP, visualizador, calibración y
+guardado de originales de la tarea 03. Añade YOLO11x preentrenado y conteo de
+**ocupación en cada fotografía**, sin tracking, entrenamiento ni UDP.
 Los firmware de cámara y C6 permanecen sin cambios.
 
-## Estado de las pruebas
+## Entorno y modelo elegido
 
-- El usuario confirmó 19 capturas de 1.1 con memoria estable y sensor **OV3660**.
-- Wi-Fi/HTTP de 1.2/1.3 tiene compilación verificada; su prueba física y la calidad
-  visual siguen pendientes de evidencia del usuario.
-- Este cliente se prueba con respuestas HTTP simuladas y fotografías sintéticas
-  generadas localmente. Eso no acredita recepción real, encuadre ni calibración
-  de la maqueta. **No hay coordenadas definitivas preconfiguradas.**
+| Parámetro inicial | Valor |
+| --- | --- |
+| Python | 3.11.15, venv propio en Vision_Artificial/.venv |
+| Ultralytics / PyTorch verificados | 8.4.218 / 2.15.0+cpu |
+| OpenCV-Python / NumPy / Requests | 4.12.0.88 / 2.2.6 / 2.32.5 |
+| Pesos locales | yolo11x.pt, ya descargados por el usuario |
+| Dispositivo | cpu |
+| Foto física requerida | **SVGA 800 × 600**, sensor OV3660 |
+| Calidad JPEG sugerida | 10, configurada manualmente en la web |
+| Inferencia imgsz | 960, diferente de la resolución física |
+| Confianza / IoU | 0.15 / 0.45 |
+| Clases COCO | 2 car, 3 motorcycle, 5 bus, 7 truck |
 
-## Instalación en Windows
+Todos esos tipos de detección se consideran vehículos con el mismo peso. Se
+verifican los nombres del modelo para los IDs seleccionados. No se instala otro
+modelo ni se descargan pesos si falta el archivo: se informa el error. Una
+instancia del modelo se carga en el trabajador neuronal y se reutiliza.
 
-Usar **Python 3.11 de 64 bits**, Visual Studio Code y una terminal PowerShell
-normal. Descargar Python desde [python.org](https://www.python.org/downloads/)
-si hace falta. El paquete OpenCV incluye soporte de ventana; no instalar
-opencv-python-headless en este entorno.
+## Ejecutar en Windows con el entorno existente
 
-Desde la raíz del repositorio:
+Abrir PowerShell normal desde la raíz del repositorio:
 
 ```powershell
 cd Vision_Artificial
-py -3.11 --version
+.\.venv\Scripts\python.exe --version
+.\.venv\Scripts\python.exe -m pip show ultralytics torch
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe main.py --pesos .\yolo11x.pt
+```
+
+El entorno funcional del usuario ya contiene los paquetes. **No ejecutar pip
+install para reinstalarlos si estas comprobaciones son correctas.**
+requirements.txt conserva las dependencias base; requirements-ai.txt separa las
+dependencias neuronales. Solo para un entorno nuevo/incompleto, crear un venv de
+Python 3.11 x64, instalar la base y después el complemento:
+
+```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item config.example.json config.json
+.\.venv\Scripts\python.exe -m pip install -r requirements-ai.txt
 ```
 
-Si config.json ya existe, conservarlo y editarlo en vez de volver a copiar la
-plantilla. Los comandos usan directamente el ejecutable del entorno: **no es
-necesario activar scripts ni cambiar la política de ejecución de PowerShell**.
-En VS Code seleccionar como intérprete `Vision_Artificial\.venv\Scripts\python.exe`.
-No ejecutar pip dentro del venv de ESP-IDF ni instalar estas dependencias allí.
+La distribución CPU de PyTorch debe corresponder al entorno elegido; consultar
+las [instrucciones oficiales](https://pytorch.org/get-started/locally/) si no está
+instalada. No mezclar paquetes con el venv de ESP-IDF. Seleccionar el intérprete
+Vision_Artificial/.venv en VS Code. No hace falta activar scripts PowerShell.
 
-La referencia verificada usa OpenCV-Python 4.12.0.88, NumPy 2.2.6 y Requests
-2.32.5, fijados en requirements.txt. unittest pertenece a la biblioteca estándar;
-no se necesita pytest. La carpeta vacía heredada `Vision Artificial/` se conserva;
-la implementación de esta tarea está únicamente en **Vision_Artificial/**.
+### Configuración local
 
-## Configurar la cámara
+Conservar **config.json** y **roi.json** existentes: no copiarlos encima con la
+plantilla. config.example.json es una referencia sin IP real ni credenciales.
+Los nuevos campos se completan por defecto al leer una configuración anterior,
+sin escribir ni sustituir sus valores. Los parámetros efectivamente utilizados
+se anuncian en consola al iniciar.
 
-Primero programar el firmware HTTP de la tarea 02 y comprobar la IPv4 en el
-monitor serie. Computadora y cámara deben estar en la misma LAN. La guía de
-[Proyecto_Final_Cam](../Proyecto_Final_Cam/README.md) explica ese procedimiento.
-En este cliente no se introducen credenciales Wi-Fi: las gestiona la cámara.
-
-Editar el **config.json local**:
-
-| Campo | Uso |
-| --- | --- |
-| url_base | IPv4 o URL base anunciada por la cámara, sin `/capture` al final |
-| timeout_conexion_s | Espera de conexión, inicialmente 3 s |
-| timeout_lectura_s | Espera por inactividad de lectura, inicialmente 15 s |
-| intervalo_captura_s | Objetivo entre inicios de ciclos completos, inicialmente 1 s |
-| reintentos | Reintentos HTTP adicionales, inicialmente 2 (máximo 5) |
-| pausa_reintento_s | Pausa entre reintentos: base × número de intento |
-| directorio_almacenamiento | Carpeta de JPEG originales y metadatos, por defecto capturas |
-| ruta_roi | Archivo local de calibración, por defecto roi.json |
-
-Los tiempos deben estar entre 0.05 y 60 segundos. Las rutas relativas se resuelven
-contra la carpeta del archivo de configuración, no contra el directorio desde el
-que se lanzó Python. La plantilla y el config.json creado inicialmente dejan la
-URL vacía para que no haya una dirección real publicada.
-
-Ejecutar desde Vision_Artificial:
+La dirección se obtiene de url_base o de un argumento explícito:
 
 ```powershell
-.\.venv\Scripts\python.exe main.py
-```
-
-También se puede sobrescribir la URL sin modificar config.json, reemplazando el
-marcador IP-DE-LA-CAMARA por la dirección real:
-
-```powershell
-.\.venv\Scripts\python.exe main.py --url http://IP-DE-LA-CAMARA
-.\.venv\Scripts\python.exe main.py --config config.json --url http://IP-DE-LA-CAMARA
+.\.venv\Scripts\python.exe main.py --url http://IP-DE-LA-CAMARA --pesos .\yolo11x.pt
+.\.venv\Scripts\python.exe main.py --sin-ia
 .\.venv\Scripts\python.exe main.py --help
 ```
 
-## Contrato HTTP y adquisición
+Sustituir IP-DE-LA-CAMARA por la IPv4 real. El modo --sin-ia conserva el cliente y
+editor sin cargar el modelo; D permite activarlo después. La URL no debe llevar
+/capture, consultas ni credenciales. Las rutas relativas de config.json se
+resuelven contra su carpeta; --pesos se resuelve contra la terminal actual.
 
-Se consulta **GET /status** y después **GET /capture**, siempre secuencialmente.
-No se utiliza VideoCapture: `/capture` es un JPEG individual, no MJPEG.
-No se modifica la configuración de la cámara ni se llama a POST /control desde
-este programa. Para cambiar resolución/calidad usar la interfaz web de la tarea
-02 antes de calibrar y evitar controles de otros clientes durante la sesión.
+Campos neuronales configurables en config.json:
 
-El cliente exige HTTP 200, application/json o image/jpeg según la ruta, límite
-de tamaño (64 KiB para estado y 5 MiB para JPEG), marcadores SOI/EOI y una matriz
-BGR válida tras cv2.imdecode(np.frombuffer(...)). Content-Type puede incluir
-parámetros como charset. No sigue redirecciones ni usa proxies del entorno.
-Conserva X-Capture-Id cuando existe; su ausencia se muestra como no disponible.
+```json
+{
+  "detector": {
+    "pesos": "yolo11x.pt",
+    "dispositivo": "cpu",
+    "imgsz": 960,
+    "confianza": 0.15,
+    "iou": 0.45,
+    "clases": [2, 3, 5, 7]
+  },
+  "deteccion_activa": true,
+  "filtro_mediana": true,
+  "max_antiguedad_imagen_s": 30.0,
+  "max_antiguedad_resultado_s": 30.0,
+  "directorio_diagnosticos": "diagnosticos"
+}
+```
 
-Del JSON real se usan camera_ready, sensor, width, height y quality. Los demás
-campos reales recibidos se conservan como instantánea en los metadatos. La calidad
-se registra como **reportada por /status**, solo si sus dimensiones coinciden:
-el firmware no incluye calidad en el encabezado de cada JPEG. Otro cliente que
-reconfigure entre /status y /capture puede desactualizar ese dato.
+Este fragmento se integra con los campos HTTP previos, no sustituye el archivo
+completo. Confianza e IoU: (0,1]; imgsz: múltiplo de 32 entre 32 y 2048; clases:
+subconjunto sin duplicados de 2/3/5/7; límites de antigüedad: 0.1..600 s. Los
+cambios de configuración requieren reiniciar la aplicación y reinician el filtro.
 
-Se mide recepción y decodificación con relojes monotónicos. La frecuencia efectiva
-es la inversa del tiempo entre capturas válidas consecutivas; errores y pausas
-pueden reducirla. Si HTTP tarda más de un segundo, no se superponen solicitudes
-para intentar recuperar el tiempo. Los reintentos de transporte/HTTP esperan
-pausas controladas; un JPEG que no decodifica se informa y se intenta de nuevo
-en el siguiente ciclo. Todas las respuestas y la Session se cierran correctamente.
+Se conservan timeout_conexion_s=3, timeout_lectura_s=15, intervalo_captura_s=1,
+reintentos=2 y pausa_reintento_s=1 como valores iniciales, editables. El cliente
+consulta GET /status y GET /capture secuencialmente con Requests, valida HTTP,
+Content-Type, tamaño, SOI/EOI y cv2.imdecode. No usa VideoCapture ni cambia la
+cámara mediante POST /control. Las sesiones/respuestas se cierran correctamente.
 
-Un único hilo maneja HTTP y conserva **solo la última captura**, sin cola de
-fotografías. El hilo principal procesa la ventana/teclado cada 30 ms incluso
-durante un timeout. Requests limita inactividad por lectura; se verifica además
-el tiempo transcurrido entre bloques. Sus timeouts no son una garantía estricta
-de duración total en redes que entregan datos muy lentamente.
+### Configurar SVGA y recalibrar
+
+Desde la página web del firmware seleccionar **SVGA 800 × 600** y, si se desea,
+calidad JPEG **10**; pulsar Aplicar ajustes y comprobar una fotografía. Esta es
+una acción del usuario: el cliente no reconfigura la cámara automáticamente.
+Si el JPEG no es de 800 × 600, la ventana solicita configurar SVGA y no ofrece
+conteos válidos. imgsz=960 controla el procesamiento interno de YOLO; las cajas
+devueltas se validan en coordenadas de la fotografía original de 800 × 600.
+
+En esta inspección la calibración local conservada tenía referencia **320 × 240**.
+La corrección 03.1 impide darla por válida para SVGA al editar únicamente una ROI.
+Reconfirmar **ambas** sobre la foto actual y guardar con G:
+
+1. Cámara fija y escena visible. Pulsar 1 para congelar una fotografía.
+2. R limpia la primera región. Clic izquierdo añade vértices; clic derecho deshace.
+3. Dibujar solo la espera del carril 1, excluyendo convergencia/salida; Enter confirma.
+4. Pulsar 2, R y dibujar la espera del carril 2; Enter confirma.
+5. G guarda ambas regiones y Espacio reanuda.
+
+Se conservan coordenadas normalizadas, resolución de referencia y archivo versión
+1 compatible con la tarea 03. Se rechazan polígonos degenerados, autointersectados,
+superpuestos, contenidos o con bordes que se tocan. Incluye polígonos cóncavos
+simples de 3..64 vértices. Un punto sobre el borde pertenece a la ROI; la separación
+entre regiones evita ambigüedad. El contador reutiliza GestorROI.contiene_punto.
+
+Cambiar resolución marca la calibración pendiente hasta reconfirmar ambas ROI;
+volver a la resolución anterior no borra esa invalidación. Si se mueve, gira o
+cambia la perspectiva/campo visual sin alterar dimensiones, pulsar **V** y
+recalibrar ambas. Ese cambio físico no puede detectarse de forma fiable solo con
+las dimensiones de la foto. Los archivos locales se conservan hasta guardar
+explícitamente con G; no hay coordenadas inventadas.
 
 ## Ventana y controles
 
-La fotografía se presenta a tamaño nativo con un panel debajo: estado de conexión,
-dimensiones reales, bytes JPEG, ID, recepción/decodificación, Hz y edad de imagen.
-NUEVA indica actualización; ULTIMA es la foto conservada entre solicitudes;
-PAUSADA es la referencia congelada. Si falla HTTP o no se confirma conexión
-durante más de max(5 s, 3 × intervalo), aparece **IMAGEN ANTIGUA** y se impide
-guardar. No confundir un ID repetido tras reinicio con una sesión global única.
+La ventana muestra la fotografía analizada con sus cajas, clase, confianza,
+centros y ROI, además de ID, secuencia, HTTP, resolución, tamaño JPEG, Hz,
+tiempo neuronal, latencia total, antigüedad, muestras del filtro y fotos omitidas.
+Cuando YOLO tarda, se conserva el framebuffer que realmente analizó: **nunca se
+dibujan sus cajas sobre una fotografía posterior**.
 
-| Control | Acción |
+| Tecla / ratón | Acción |
 | --- | --- |
-| S | Guardar los bytes originales de la fotografía visible |
-| 1 / 2 | Pausar y seleccionar/editar ROI 1 o ROI 2 |
-| Clic izquierdo | Añadir vértice dentro de la fotografía |
-| Clic derecho | Quitar el último vértice del borrador |
-| Enter | Validar y confirmar el polígono activo |
-| R | Borrar ROI activa en memoria y limpiar el borrador |
-| G | Guardar la calibración de ambas ROI confirmadas |
-| Espacio | Pausar/reanudar; reanudar abandona un borrador no confirmado |
-| Q / Escape / cerrar ventana | Salir y cerrar conexiones |
+| S | Guardar exclusivamente JPEG original, sin recodificar ni anotar |
+| 1 / 2 | Pausar y editar ROI 1 / ROI 2 |
+| Clic izquierdo / derecho | Añadir / quitar último vértice del borrador |
+| Enter | Confirmar polígono |
+| R | Borrar ROI activa en memoria |
+| G | Guardar ambas ROI confirmadas |
+| Espacio | Pausar/reanudar; abandona borrador no confirmado al reanudar |
+| D | Activar/desactivar detección |
+| C | Mostrar/ocultar cajas |
+| O | Mostrar/ocultar ROI |
+| V | Marcar ambas ROI pendientes de recalibración |
+| A | Guardar PNG anotado y JSON de diagnóstico separados |
+| Q / Escape / cerrar ventana | Salir y cerrar trabajadores |
 
-Al pausar no se solicitan nuevas fotografías, pero continúan las consultas de
-estado para detectar desconexión. Una captura ya en curso puede terminar en el
-buzón sin cambiar la referencia pausada. Al salir se cierra la ventana y se espera
-a que termine/cancele la lectura HTTP en curso; no se mata el hilo ni se cierra su
-sesión desde otro hilo. Una red lenta puede retrasar esa salida.
+HTTP continúa en su hilo; al pausar se consulta /status, pero no se solicitan
+nuevas fotos. La ventana sigue atendiendo teclado/ratón cada 30 ms. Al salir
+terminan la lectura HTTP y la inferencia PyTorch en curso antes de cerrar sus
+trabajadores; puede tardar varios segundos. No se matan hilos ni se carga otra
+instancia del modelo al pulsar D.
 
-## Calibrar los dos carriles
+### Conteos y validez
 
-1. Fijar cámara elevada en diagonal, iluminación y resolución. Recibir una imagen
-   nítida de la maqueta de 45 × 44 cm.
-2. Pulsar 1. Dibujar la **zona de espera del primer carril** siguiendo sus bordes.
-   Seleccionar al menos tres vértices, sin repetir el primero, y pulsar Enter.
-3. Pulsar 2 y repetir para la **zona de espera del segundo carril**.
-4. Excluir **convergencia y camino de salida**. Dejar separación entre regiones.
-5. Si una región necesita corrección, seleccionarla con 1/2 y usar clic derecho
-   para deshacer vértices o R para redibujarla. Enter confirma; G persiste ambas.
-6. Reanudar con Espacio y comprobar que los polígonos coinciden con las zonas.
+Por cada fotografía se calcula el centro de cada caja válida y se asigna una
+única categoría: carril 1, carril 2 o fuera. N_total=N1+N2+N_fuera y D=N1-N2.
+No se acumula entre fotos ni se cuenta el paso de un vehículo a lo largo del tiempo.
+Detecciones malformadas invalidan la inferencia, en lugar de simular una escena vacía.
 
-Se admiten polígonos simples, también cóncavos, de 3 a 64 vértices. Se rechazan
-puntos fuera de imagen, no finitos o repetidos, tres vértices consecutivos alineados,
-área casi nula y autointersecciones. También se rechazan contención, cruces y
-**contacto entre los bordes** de las ROI para evitar asignaciones ambiguas.
-La región previa se mantiene si falla una confirmación, excepto cuando el usuario
-la borró expresamente con R. G requiere ambas regiones válidas y ningún borrador.
+La ventana distingue un **cero válido** de desconexión, JPEG inválido, inferencia
+pendiente/error, ROI ausentes/pendientes, pausa e imagen/resultado antiguos.
+Los conteos previos se conservan como referencia **NO válida para control**.
+ResultadoInferencia.a_dict(valido=False, motivo=...) devuelve conteos de decisión
+nulos y una referencia visual separada; está preparado para una integración
+posterior, sin enviar UDP.
 
-roi.json contiene versión, resolución de referencia y coordenadas normalizadas:
-`x/(ancho-1), y/(alto-1)`. Así el último píxel corresponde a 1. Al cargar se
-revalidan polígonos y se reconstruyen coordenadas para la resolución de la imagen.
-No se publican coordenadas inventadas. El archivo se reemplaza de forma atómica
-al guardar; una configuración inválida se informa y no se sobrescribe al arrancar.
+**Corrección 03.1:** una respuesta /status correcta confirma HTTP, pero no modifica
+el instante monotónico de recepción del JPEG ni quita un error de captura.
+La vigencia se calcula desde la foto, no desde la última consulta de estado.
+S tampoco se rehabilita para una foto caducada solo porque /status responda.
 
-**Cambiar orientación, perspectiva o campo visual exige recalibrar**, aunque la
-resolución sea igual. Un cambio de resolución muestra aviso; normalizar coordenadas
-solo conserva proporciones, no corrige recortes ni perspectiva. Verificar el
-encuadre real y recalibrar cuando corresponda.
+El límite inicial de 30 s es configurable y debe ajustarse con las mediciones
+reales de CPU; una ejecución de más de ese límite se descarta. La latencia total
+desde recepción incluye decodificación, espera y procesamiento hasta publicar
+el resultado. La antigüedad actual sigue creciendo después. Una foto nueva puede
+llegar mientras se muestra un resultado anterior todavía vigente.
 
-API reutilizable para una futura detección, sin implementarla todavía:
+### Concurrencia y filtro
 
-```python
-from roi_manager import GestorROI
-regiones = GestorROI.cargar("roi.json")
-pertenece = regiones.contiene_punto(1, (x, y), (ancho, alto))
+Hay un hilo HTTP, un trabajador neuronal y el hilo de la ventana. Cada buzón
+contiene solo el elemento más reciente; si entra otro trabajo pendiente lo
+reemplaza y se contabiliza como omitido. Cada secuencia se procesa como máximo
+una vez; no hay inferencias simultáneas ni cola que crezca con la carga.
+
+El trabajo incorpora la foto, ID, secuencia y una copia de las ROI. Revisión de
+ROI y época de adquisición forman el contexto. Pausar, desconectar, invalidar
+calibración o cambiar ROI invalida trabajos en curso: su resultado se descarta
+si el contexto ya cambió. Al reanudar se espera una secuencia nueva.
+
+La mediana opcional usa las últimas tres inferencias válidas nuevas para N1, N2
+y N_fuera; total y D filtrados se derivan de esos tres valores. Con una o dos
+muestras muestra el instantáneo mientras se llena la ventana. Se reinicia ante
+desconexión, captura inválida, cambio de ROI/configuración, desactivación o pérdida
+de vigencia. No incorpora duplicados ni resultados antiguos. Deshabilitar
+filtro_mediana permite comparar; el filtro no corrige falsos positivos sistemáticos.
+Si caduca una muestra de una mediana ya publicada, se vuelve al instantáneo con
+cero muestras hasta recibir otra inferencia; no se conserva aquella mediana vigente.
+
+## Originales y diagnósticos
+
+S conserva el JPEG original de la fotografía visible y sus metadatos JSON Lines,
+con fecha UTC, ID, UUID, sesión, SHA-256, dimensiones, calidad reportada y tiempos.
+Impide duplicados exactos y sobrescrituras. Calidad procede de /status y puede
+desactualizarse si otro cliente reconfigura entre estado y captura; evitar cambios
+simultáneos durante una medición. La foto debe estar vigente y sin error conocido.
+
+A guarda el lienzo anotado y un JSON en **diagnosticos/**, con el indicador de
+validez, conteos y secuencia/ID mostrado. Estos archivos no se usan como imágenes
+de entrenamiento. Las carpetas dataset/ heredadas se conservan, pero esta tarea
+no recopila automáticamente un dataset ni distribuye train/val/test.
+Pesos, runs/, capturas, diagnósticos, reportes de evaluación y configuraciones
+locales se excluyen de Git. Los archivos generados por pruebas anteriores del
+usuario permanecen intactos.
+
+## Evaluación experimental sin cámara
+
+evaluar.py utiliza fotografías JPEG locales y verdad manual en CSV, sin HTTP ni
+ventana. Solo carga el modelo una vez por ejecución. Puede usarse con la cámara
+desconectada; requiere ambas ROI calibradas y guardadas para 800 × 600.
+
+Registrar manualmente una foto, sustituyendo NOMBRE_REAL.jpg y sus conteos reales:
+
+```powershell
+.\.venv\Scripts\python.exe evaluar.py --registrar "capturas\NOMBRE_REAL.jpg" --n1 2 --n2 1 --grupo sesion-01 --uso desarrollo
 ```
 
-Usa cv2.pointPolygonTest; incluye el borde, devuelve False fuera de la imagen o
-si no existe esa región. El punto debe estar en coordenadas de la imagen actual.
+Los números anteriores son un ejemplo de uso, no anotaciones de una foto real.
+El CSV por defecto se guarda en evaluaciones/escenas.csv y contiene:
+archivo,n1_real,n2_real,grupo,uso. No copia imágenes ni entrena. Rechaza registros
+duplicados y grupos mezclados entre desarrollo y final.
 
-## Guardado y futuro dataset
-
-S guarda el **JPEG recibido sin recodificarlo**, no el lienzo de la ventana.
-Los polígonos y textos se dibujan en copias. No se exportan imágenes anotadas
-como entrenamiento ni se guardan diagnósticos automáticamente.
-
-Cada nombre combina fecha/hora UTC, ID saneado y UUID. Se abre en modo exclusivo
-para no sobrescribir. metadatos.jsonl incluye archivo, sesión, SHA-256, fechas,
-resolución, bytes, ID, calidad reportada, estado y tiempos. SHA-256 evita duplicados
-exactos, incluso después de reiniciar el programa, mientras se conserve el índice
-de metadatos. No identifica imágenes casi iguales. Utilizar una sola instancia
-escritora por directorio y no editar el índice mientras se recopilan fotografías.
-
-Si se pierde la conexión se conserva la foto a modo de referencia visual, pero
-S queda deshabilitada cuando el fallo es conocido o la confirmación está caducada.
-Una referencia pausada puede guardarse mientras /status confirma conexión;
-volver a pulsar S para el mismo JPEG no crea otra copia.
-
-La estructura preparada permanece vacía de imágenes y etiquetas:
-
-```text
-capturas/                  # JPEG originales + metadatos.jsonl
-dataset/
-  images/
-    train/
-    val/
-    test/
-  labels/
-    train/
-    val/
-    test/
+```powershell
+.\.venv\Scripts\python.exe evaluar.py --uso desarrollo --salida evaluaciones/desarrollo.json
+.\.venv\Scripts\python.exe evaluar.py --uso final --salida evaluaciones/final.json
+.\.venv\Scripts\python.exe evaluar.py --help
 ```
 
-No hay reparto train/val/test, etiquetas, red neuronal ni conteo. En el futuro
-agrupar por sesión/escena al dividir el dataset: fotogramas casi idénticos de una
-misma sesión deben permanecer en el mismo conjunto para evitar contaminación de
-la evaluación. Las carpetas generadas, venv, configuración local y pesos futuros
-están ignorados por Git; solo se versionan placeholders vacíos.
+Se pueden indicar --config, --roi, --pesos y --escenas. Primero seleccionar
+parámetros con escenas de desarrollo. Para la evaluación final:
 
-## Pruebas automatizadas
+1. Preparar entre **30 y 50 escenas reales diferentes**, cubriendo carriles vacíos,
+   equilibrio, predominio de cada carril, vehículos juntos, tamaños y posiciones.
+2. Anotar manualmente N1/N2 sin consultar la predicción al establecer la verdad.
+3. Reservar escenas/grupos independientes con uso=final antes de ajustar parámetros.
+   No llevar fotos casi iguales de una sesión a desarrollo y final.
+4. Fijar modelo, ROI, luz, conf, IoU e imgsz; ejecutar una vez la evaluación final.
+5. Publicar número de escenas, cobertura/errores y métricas reales. La meta es
+   **al menos 90 % de fotografías con ambos conteos correctos**; no está demostrada.
 
-Desde Vision_Artificial, sin cámara, sin Internet y sin abrir ventanas:
+El informe calcula MAE por carril, exactitud de cada carril, porcentaje con ambos
+correctos, tiempo medio neuronal, mediana y P95 de latencia, y frecuencia efectiva.
+Las escenas inválidas cuentan como incorrectas en los porcentajes globales; no
+se convierten en cero. MAE y tiempos se calculan sobre escenas válidas y se
+informa cobertura; si no hay ninguna válida son null. El P95 usa interpolación
+lineal de NumPy. La latencia de evaluación incluye lectura local/decodificación,
+inferencia y conteo, **sin HTTP ni carga del modelo**, diferente de la latencia
+en vivo. La frecuencia es fotos válidas / duración total del recorrido local.
+
+## Pruebas y resultado real
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Las pruebas generan JPEG con OpenCV, simulan Responses de Requests y ejercitan
-geometría, persistencia, guardado y controles del visualizador sin HighGUI.
-También verifican que el buzón conserve la última imagen y que pausar no inicie
-nuevas capturas. Resultado real del **24 de noviembre de 2026**: **29 pruebas
-correctas**, Python 3.11.15, OpenCV 4.12.0 (distribución 4.12.0.88), NumPy 2.2.6 y
-Requests 2.32.5. También se comprobó main.py --help y compatibilidad de dependencias.
-El entorno de validación se creó en Vision_Artificial/.venv usando un intérprete
-base 3.11, sin instalar paquetes en el venv de ESP-IDF ni cambiar su configuración.
+Verificación del **25 de noviembre de 2026**:
 
-## Diagnóstico y límites
+- **51 pruebas correctas**, incluidas las 29 anteriores. Las nuevas usan detecciones
+  simuladas y no necesitan PyTorch, Ultralytics, red ni descargar YOLO11x.
+- Cobertura de centros, clases/confianza, ocupación y fuera, cero válido, ROI
+  inválidas/pendientes, error neuronal, edad, desconexión, cambio de contexto
+  durante inferencia, buzón/omitidos, no repetir secuencias, filtro y métricas.
+- Prueba real adicional con los pesos locales: imagen sintética negra SVGA,
+  imgsz=960, CPU, carga ~0.53 s e inferencia ~4.49 s, cero predicciones.
+- Prueba sobre un JPEG local SVGA existente: **4 predicciones car**, ~4.35 s.
+  No hubo verdad manual ni conteo ROI: el archivo de calibración local seguía
+  referenciado a 320 × 240 y se conservó. No es una medición de precisión.
+- Versiones instaladas verificadas; pip check correcto. No se reinstalaron
+  paquetes ni se volvieron a descargar pesos. main.py --help y evaluar.py --help
+  comprobados. Los dos proyectos de firmware no cambian.
 
-| Síntoma | Revisión |
+La aplicación previa y experimentos con modelos fueron confirmados por el usuario.
+La integración en vivo de la tarea 04, recalibración SVGA, validez en desconexiones
+reales y evaluación de 30–50 escenas siguen pendientes. Los tiempos citados son
+pruebas individuales, no un benchmark ni garantía de frecuencia.
+
+## Licencia y diagnóstico
+
+Consultar [LICENCIAS_IA.md](LICENCIAS_IA.md): Ultralytics ofrece AGPL-3.0 y Enterprise.
+El carácter universitario/público no exime de conservar avisos y cumplir los términos
+de distribución/fuente correspondiente aplicables. La licencia de las aportaciones
+del equipo debe acordarse; este cambio no la asigna automáticamente.
+
+| Síntoma | Acción |
 | --- | --- |
-| py -3.11 no disponible | Instalar Python 3.11 x64 o usar la ruta completa de su python.exe para crear .venv |
-| Falta cv2/NumPy/Requests | Usar el intérprete de Vision_Artificial/.venv e instalar requirements.txt |
-| url_base vacía / configuración inválida | Editar config.json local o indicar --url; revisar tiempos/rutas |
-| HTTP 503 | Cámara ocupada o captura inválida; revisar monitor serie y esperar reintento |
-| Error de conexión/timeout | IP vigente, misma LAN, firmware HTTP, punto de acceso y aislamiento de clientes |
-| Content-Type inesperado | URL base incorrecta, portal cautivo u otro servidor; no añadir /capture a url_base |
-| JPEG incompleto/no decodificable | Revisar alimentación, cinta y monitor; los marcadores por sí solos no prueban corrección |
-| No aparece ventana | Usar sesión de escritorio y opencv-python, no variante headless; comprobar intérprete VS Code |
-| G rechaza guardar | Confirmar ambas ROI con Enter y corregir cruces/contacto/área nula |
-| Error al cargar roi.json | Corregir el archivo o renombrarlo localmente a roi.json.bak y recalibrar |
-| S rechaza duplicado | El JPEG ya está indexado; cambiar físicamente la escena antes de otra captura |
-| Metadatos corruptos | Conservar copia local y revisar la línea indicada; no eliminar el índice para forzar duplicados |
+| No existen pesos | Indicar ruta local correcta con --pesos; no se descargan automáticamente |
+| No coincide nombre de clase | Usar pesos COCO YOLO11x correctos; no reinterpretar IDs silenciosamente |
+| Solicita SVGA | Seleccionar 800 × 600 desde la web; el cliente no cambia la cámara |
+| ROI pendientes | Reconfirmar ambas en resolución actual; V invalida tras mover cámara |
+| Modelo lento / fotos omitidas | Comportamiento esperado de CPU: medir latencia; revisar límite de vigencia |
+| Cero NO válido | Revisar causa visible; no interpretarlo como carriles vacíos |
+| HTTP 503 / timeout | Revisar IP, red local y monitor; el cliente reintenta y conserva referencia inválida |
+| Imagen no cambia en pausa | Espacio reanuda; /status no renueva esa foto antigua |
+| Guardado S rechazado | Foto caducada, captura inválida o hash duplicado; obtener una nueva foto |
+| Ventana ausente | Usar opencv-python en escritorio y el intérprete del venv, no headless |
 
-La visualización HighGUI en Windows, recepción de la placa, calibración definitiva
-y calidad visual requieren prueba física del usuario. Las pruebas simuladas no
-convierten esos puntos en completados. El firmware no se recompila ni modifica
-durante esta tarea.
-
-Referencias: [OpenCV imdecode](https://docs.opencv.org/4.12.0/d4/da8/group__imgcodecs.html),
+Referencias oficiales:
+[YOLO11](https://docs.ultralytics.com/models/yolo11/),
+[predict / coordenadas originales](https://docs.ultralytics.com/modes/predict/),
 [pointPolygonTest](https://docs.opencv.org/4.12.0/d3/dc0/group__imgproc__shape.html),
-[Requests y timeouts](https://requests.readthedocs.io/en/latest/user/quickstart/#timeouts),
-y las versiones verificadas en PyPI de
-[OpenCV-Python](https://pypi.org/project/opencv-python/4.12.0.88/),
-[NumPy](https://pypi.org/project/numpy/2.2.6/) y
-[Requests](https://pypi.org/project/requests/2.32.5/).
+[Ultralytics 8.4.218](https://pypi.org/project/ultralytics/8.4.218/) y
+[licencia Ultralytics](https://www.ultralytics.com/license).

@@ -57,8 +57,9 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
 - Interfaz HTML/CSS/JS embebida, sin Internet ni frameworks; vista continua con
   solicitudes secuenciales, pausa de 1 s y liberación de object URLs reemplazadas.
   Verificar SOI/EOI y decodificación en navegador. Estabilización limitada y visible.
-- La C6, redes neuronales y comunicación UDP de la aplicación siguen fuera de alcance.
-- Tarea actual 03 (1.4): implementar exclusivamente en Vision_Artificial/ el cliente
+- Hasta la tarea 03, la red neuronal estaba fuera de alcance. La C6 y la
+  comunicación UDP siguen fuera de alcance en la tarea 04.
+- Tarea 03 (1.4): implementar exclusivamente en Vision_Artificial/ el cliente
   Python 3.11 con OpenCV, NumPy y Requests, visualizador, dos ROI y recopilación de
   JPEG originales. No modificar ningún firmware en esta tarea.
 - Venv propio, separado de ESP-IDF; config.json, roi.json, capturas y dataset real
@@ -73,6 +74,27 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   aún train/val/test ni guardar diagnósticos sobre las imágenes de entrenamiento.
 - Pruebas de cliente con HTTP simulado/JPEG locales y pruebas de geometría/guardado.
   No marcar Wi-Fi/HTTP/calidad visual/calibración real como probados sin evidencia.
+- Tarea actual 04: integrar YOLO11x preentrenado local en Vision_Artificial, sin
+  modificar ningún firmware, sin entrenamiento, nuevo dataset ni UDP. El usuario
+  confirmó la aplicación y experimentó con modelos; eligió YOLO11x y SVGA 800x600.
+- Conservar entorno: Python 3.11.15, Ultralytics 8.4.218, PyTorch 2.15.0+cpu.
+  No reinstalar paquetes funcionales ni descargar pesos si ya existen localmente.
+  Parámetros iniciales: cpu, imgsz 960, conf 0.15, IoU 0.45, clases 2/3/5/7.
+  Respetar valores del usuario. Distinguir resolución física e inferencia.
+- Modelo cargado una vez, BGR y cajas en coordenadas originales. Conteo de centros
+  por ROI: N1, N2, N_fuera, N_total, D=N1-N2; sin tracking ni acumulación.
+- Separar conectividad HTTP, vigencia del JPEG y coherencia ROI (corrección 03.1).
+  /status no renueva la edad de la foto; resolución distinta exige reconfirmar
+  ambas ROI. No sobrescribir calibración local ni reconfigurar cámara en silencio.
+- Hilo neuronal independiente, un solo trabajo pendiente reemplazable y una
+  inferencia por secuencia. No dibujar detecciones de una foto sobre otra.
+  Invalidar resultados/filtro ante desconexión, pausa, cambio de ROI o caducidad.
+  Un cero válido debe distinguirse de ausencia de resultado/error/foto antigua.
+- Mediana opcional de tres inferencias válidas nuevas; originales en S y diagnósticos
+  separados en A. Evaluación local con verdad manual, sin declarar alcanzada la
+  meta del 90 % sin medir 30–50 escenas reales y reservar escenas finales independientes.
+- Documentar licencia AGPL/Enterprise de Ultralytics para el proyecto público.
+  No versionar pesos, runs, capturas, diagnósticos ni configuraciones locales.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.
@@ -109,6 +131,8 @@ verdes simultáneamente. Pérdida de datos válidos: transición controlada a am
 - En tarea 03 partir de la implementación HTTP; si PR #2 sigue abierto, preparar
   PR contra feat/camera-http-1-2-1-3 para mostrar solo los cambios nuevos. Tras su
   integración se podrá cambiar la base a master. No fusionar PR sin autorización.
+- En tarea 04 usar feat/vision-python-1-4 como base y PR contra esa rama, con rama
+  sugerida feat/yolo11x-vehicle-counting. Conservar todos los cambios previos.
 - Entregar archivos creados/modificados, implementación,
   decisiones, compilación real, pasos de prueba, pendientes y aceptación alcanzada.
 
