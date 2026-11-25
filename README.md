@@ -81,7 +81,7 @@ reciente y publica cajas/conteos unidos a esa misma imagen. ROI incoherentes,
 desconexión, fotos antiguas o errores invalidan el resultado; nunca equivalen a
 cero vehículos. Incluye mediana opcional de tres resultados y evaluación local.
 
-Seguimiento: **51 pruebas automatizadas correctas**; inferencia real con pesos
+Seguimiento: **60 pruebas automatizadas correctas**; inferencia real con pesos
 locales sobre una imagen sintética y un JPEG local SVGA. En este último YOLO
 produjo cuatro predicciones car en unos 4.35 s; no son conteos reales verificados.
 La calibración local de referencia 320 × 240 se conserva y exige reconfirmar ambas

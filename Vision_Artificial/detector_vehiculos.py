@@ -8,7 +8,7 @@ import numpy as np
 
 CLASES_COCO = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 PARAMETROS_INICIALES = dict(pesos="yolo11x.pt", dispositivo="cpu", imgsz=960,
-                           confianza=0.15, iou=0.45, clases=[2, 3, 5, 7])
+                           confianza=0.15, iou=0.45, clases=[2, 3, 5, 7], agnostic_nms=False)
 
 
 class ErrorDeteccion(RuntimeError):
@@ -19,6 +19,8 @@ def validar_parametros(parametros):
     if not isinstance(parametros, dict) or set(parametros) - set(PARAMETROS_INICIALES):
         raise ValueError("Parámetros neuronales desconocidos.")
     salida = PARAMETROS_INICIALES | parametros
+    if type(salida["agnostic_nms"]) is not bool:
+        raise ValueError("agnostic_nms debe ser booleano.")
     for clave in ("confianza", "iou"):
         if (isinstance(salida[clave], bool) or not isinstance(salida[clave], (float, int)) or
                 not math.isfinite(salida[clave]) or not 0 < salida[clave] <= 1):
@@ -104,7 +106,8 @@ class DetectorVehiculos:
         try:
             resultados = self.modelo.predict(source=imagen, device=self.parametros["dispositivo"],
                 imgsz=self.parametros["imgsz"], conf=self.parametros["confianza"], iou=self.parametros["iou"],
-                classes=self.parametros["clases"], verbose=False, save=False, stream=False)
+                classes=self.parametros["clases"], agnostic_nms=self.parametros["agnostic_nms"],
+                verbose=False, save=False, stream=False)
             if len(resultados) != 1 or tuple(resultados[0].orig_shape) != tuple(imagen.shape[:2]):
                 raise ErrorDeteccion("YOLO no devolvió las coordenadas de la fotografía original.")
             filas = resultados[0].boxes.data.cpu().numpy()

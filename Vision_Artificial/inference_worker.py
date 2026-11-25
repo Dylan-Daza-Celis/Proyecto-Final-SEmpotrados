@@ -29,7 +29,9 @@ class ResultadoInferencia:
                 "instantaneo": self.instantaneo.a_dict() if valido else None,
                 "filtrado": self.filtrado.a_dict() if valido else None,
                 "referencia_visual": self.instantaneo.a_dict(), "muestras_validas": self.muestras_validas if valido else 0,
-                "inferencia_s": self.inferencia_s, "latencia_total_s": self.latencia_total_s, "modelo": self.modelo}
+                "inferencia_s": self.inferencia_s, "latencia_total_s": self.latencia_total_s,
+                "edad_al_utilizar_s": time.monotonic() - self.captura.origen_monotonic,
+                "referencia_temporal": "inicio de solicitud HTTP; no timestamp del sensor", "modelo": self.modelo}
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ class EstadoInferencia:
 
 
 class TrabajadorInferencia(threading.Thread):
-    def __init__(self, parametros, max_antiguedad_s=30.0, filtro=True, fabrica_detector=DetectorVehiculos):
+    def __init__(self, parametros, max_antiguedad_s=12.0, filtro=True, fabrica_detector=DetectorVehiculos):
         super().__init__(name="inferencia_yolo", daemon=False)
         self.parametros = dict(parametros)
         self.limite = max_antiguedad_s
@@ -140,7 +142,7 @@ class TrabajadorInferencia(threading.Thread):
                 self._pendiente = None
                 self._procesando = secuencia
             try:
-                if time.monotonic() - captura.recibida_monotonic > self.limite:
+                if time.monotonic() - captura.origen_monotonic > self.limite:
                     raise ValueError("Imagen antigua antes de inferir")
                 resolucion = (captura.imagen.shape[1], captura.imagen.shape[0])
                 if resolucion != (800, 600):
@@ -153,18 +155,18 @@ class TrabajadorInferencia(threading.Thread):
                     if generacion != self._generacion or self.detener.is_set():
                         self._omitidos += 1
                         continue
-                    if final - captura.recibida_monotonic > self.limite:
+                    if final - captura.origen_monotonic > self.limite:
                         self._motivo = "Resultado neuronal antiguo"
                         self._reiniciar_filtro()
                         continue
                     if any(final - t > self.limite for t in self._tiempos_muestras):
                         self._reiniciar_filtro()
                     filtrado, muestras = self._filtro.agregar(secuencia, conteo)
-                    self._tiempos_muestras = (self._tiempos_muestras + [captura.recibida_monotonic])[-3:]
+                    self._tiempos_muestras = (self._tiempos_muestras + [captura.origen_monotonic])[-3:]
                     self._frecuencia = 0.0 if self._ultimo_fin is None else 1 / max(final - self._ultimo_fin, 1e-6)
                     self._ultimo_fin = final
                     self._resultado = ResultadoInferencia(captura, secuencia, detecciones, conteo, filtrado,
-                        muestras, segundos, final, final - captura.recibida_monotonic,
+                        muestras, segundos, final, final - captura.origen_monotonic,
                         str(self.parametros["pesos"]), contexto, generacion)
                     self._error = ""
                     self._motivo = ""
@@ -216,7 +218,7 @@ def motivo_resultado(estado, captura_actual, regiones, estado_ia, max_imagen_s, 
     if (resultado.generacion != estado_ia.generacion or
             resultado.contexto != (regiones.firma(), estado.epoca)):
         return "Inferencia pendiente: contexto cambiado"
-    if not 0 <= ahora - resultado.captura.recibida_monotonic <= max_resultado_s:
+    if not 0 <= ahora - resultado.captura.origen_monotonic <= max_resultado_s:
         return "Resultado neuronal antiguo"
     if estado_ia.motivo:
         return estado_ia.motivo

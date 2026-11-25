@@ -115,6 +115,9 @@ class PruebasConteo(unittest.TestCase):
         regiones.establecer(1, regiones.puntos_pixel(1, (800, 600)), (800, 600))
         self.assertIn('recalibracion', regiones.estado_calibracion((800, 600)))
         regiones.establecer(2, regiones.puntos_pixel(2, (800, 600)), (800, 600))
+        self.assertIn('recalibracion', regiones.estado_calibracion((800, 600)))
+        with tempfile.TemporaryDirectory() as carpeta:
+            regiones.guardar(Path(carpeta) / 'roi.json')
         self.assertEqual(regiones.estado_calibracion((800, 600)), '')
         regiones.invalidar_calibracion()
         self.assertIn('recalibracion', regiones.estado_calibracion((800, 600)))

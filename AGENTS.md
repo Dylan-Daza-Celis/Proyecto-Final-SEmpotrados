@@ -95,6 +95,13 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   meta del 90 % sin medir 30–50 escenas reales y reservar escenas finales independientes.
 - Documentar licencia AGPL/Enterprise de Ultralytics para el proyecto público.
   No versionar pesos, runs, capturas, diagnósticos ni configuraciones locales.
+- Revisión 04.1: ejemplo con imagen 6 s, resultado 12 s y mediana desactivada;
+  preservar valores locales explícitos. Edad conservadora desde inicio de solicitud
+  HTTP, incluidos reintentos; no existe timestamp fiable del sensor. Invalidar época
+  al primer fallo antes de reintentar. Marca roi.json.invalidada persistente: ambas
+  ROI deben reconfirmarse y guardarse para recuperar validez. agnostic_nms booleano
+  explícito. Evaluación con SHA-256, duplicados entre usos, versiones y hashes de
+  pesos/calibración; distinguir tiempos locales de HTTP. Mantener rama y PR #4.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.

@@ -22,3 +22,4 @@ runs/
 !/diagnosticos/.gitkeep
 /evaluaciones/
 .ultralytics/
+*.invalidada

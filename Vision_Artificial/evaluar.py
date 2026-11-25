@@ -3,9 +3,13 @@ import argparse
 import csv
 from datetime import datetime, timezone
 import json
+import hashlib
+from importlib.metadata import version
+import platform
 from pathlib import Path
 import statistics
 import time
+import uuid
 
 import cv2
 import numpy as np
@@ -16,6 +20,21 @@ from main import RAIZ, cargar_configuracion
 from roi_manager import GestorROI
 
 CAMPOS = ["archivo", "n1_real", "n2_real", "grupo", "uso"]
+CAMPOS_CON_HASH = CAMPOS + ["sha256"]
+
+
+def huella_archivo(ruta):
+    resumen = hashlib.sha256()
+    with Path(ruta).open('rb') as archivo:
+        for bloque in iter(lambda: archivo.read(1024 * 1024), b''):
+            resumen.update(bloque)
+    return resumen.hexdigest()
+
+
+def metadatos_reproducibilidad(pesos, calibracion):
+    return {"python": platform.python_version(), "ultralytics": version("ultralytics"),
+            "pytorch": version("torch"), "modelo": Path(pesos).name,
+            "pesos_sha256": huella_archivo(pesos), "calibracion_sha256": huella_archivo(calibracion)}
 
 
 def leer_escenas(ruta):
@@ -24,10 +43,10 @@ def leer_escenas(ruta):
         return []
     with ruta.open(encoding="utf-8", newline="") as archivo:
         lector = csv.DictReader(archivo)
-        if lector.fieldnames != CAMPOS:
+        if lector.fieldnames not in (CAMPOS, CAMPOS_CON_HASH):
             raise ValueError("Cabecera CSV esperada: " + ",".join(CAMPOS))
         filas = list(lector)
-    grupos, vistos = {}, set()
+    grupos, vistos, hashes = {}, set(), set()
     for fila in filas:
         try:
             fila["archivo"] = (ruta.parent / fila["archivo"]).resolve()
@@ -42,6 +61,13 @@ def leer_escenas(ruta):
         if fila["archivo"] in vistos:
             raise ValueError("Fotografía repetida en evaluación")
         vistos.add(fila["archivo"])
+        huella = huella_archivo(fila["archivo"])
+        if "sha256" in fila and fila["sha256"] != huella:
+            raise ValueError("SHA-256 no coincide: la fotografía registrada cambió")
+        fila["sha256"] = huella
+        if fila["sha256"] in hashes:
+            raise ValueError("Fotografías idénticas por SHA-256; no se admiten entre desarrollo/final ni dentro del mismo uso")
+        hashes.add(fila["sha256"])
         if fila["grupo"] in grupos and grupos[fila["grupo"]] != fila["uso"]:
             raise ValueError("No mezclar un mismo grupo/sesión entre desarrollo y evaluación final")
         grupos[fila["grupo"]] = fila["uso"]
@@ -55,18 +81,25 @@ def registrar_escena(ruta_csv, imagen, n1, n2, grupo, uso):
     filas = leer_escenas(ruta_csv)
     if any(f["archivo"] == imagen for f in filas):
         raise ValueError("La fotografía ya está registrada")
+    huella = huella_archivo(imagen)
+    if any(f["sha256"] == huella for f in filas):
+        raise ValueError("Fotografía idéntica por SHA-256 ya registrada; no reutilizar en desarrollo/final")
     if not grupo or uso not in ("desarrollo", "final"):
         raise ValueError("Indique grupo y uso")
     if any(f["grupo"] == grupo and f["uso"] != uso for f in filas):
         raise ValueError("El grupo ya está asignado a otro uso")
     ruta_csv = Path(ruta_csv)
     ruta_csv.parent.mkdir(parents=True, exist_ok=True)
-    nueva = not ruta_csv.exists()
-    with ruta_csv.open("a", newline="", encoding="utf-8") as archivo:
-        escritor = csv.DictWriter(archivo, fieldnames=CAMPOS)
-        if nueva:
+    filas.append(dict(archivo=str(imagen), n1_real=n1, n2_real=n2, grupo=grupo, uso=uso, sha256=huella))
+    temporal = ruta_csv.with_name(ruta_csv.name + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        with temporal.open("x", newline="", encoding="utf-8") as archivo:
+            escritor = csv.DictWriter(archivo, fieldnames=CAMPOS_CON_HASH)
             escritor.writeheader()
-        escritor.writerow(dict(archivo=str(imagen), n1_real=n1, n2_real=n2, grupo=grupo, uso=uso))
+            escritor.writerows(filas)
+        temporal.replace(ruta_csv)  # Actualiza también los CSV anteriores, sin tocar imágenes.
+    finally:
+        temporal.unlink(missing_ok=True)
 
 
 def calcular_metricas(registros, duracion_s):
@@ -101,6 +134,9 @@ def evaluar_escenas(escenas, regiones, detector):
                                  "n1": None, "n2": None, "error": ""}
         try:
             contenido = escena["archivo"].read_bytes()
+            registro["sha256"] = hashlib.sha256(contenido).hexdigest()
+            if escena.get("sha256", registro["sha256"]) != registro["sha256"]:
+                raise ValueError("La fotografía cambió después de leer el manifiesto")
             if not contenido.startswith(b"\xff\xd8") or not contenido.endswith(b"\xff\xd9"):
                 raise ValueError("Se requiere JPEG original completo")
             imagen = cv2.imdecode(np.frombuffer(contenido, np.uint8), cv2.IMREAD_COLOR)
@@ -148,11 +184,16 @@ def main(argumentos=None):
         if regiones.estado_calibracion((800, 600)):
             raise ValueError("Recalibre y guarde ambas ROI para 800x600 antes de evaluar")
         detector = DetectorVehiculos(configuracion["detector"])
+        reproducibilidad = metadatos_reproducibilidad(configuracion["detector"]["pesos"],
+                                                     args.roi or configuracion["ruta_roi"])
         registros, duracion = evaluar_escenas(escenas, regiones, detector)
         informe = {"fecha_utc": datetime.now(timezone.utc).isoformat(), "uso": args.uso,
+                   "reproducibilidad": reproducibilidad,
                    "parametros": configuracion["detector"] | {"pesos": str(configuracion["detector"]["pesos"])},
                    "metricas": calcular_metricas(registros, duracion), "escenas": registros,
-                   "latencia": "pipeline local sin HTTP; excluye carga del modelo"}
+                   "latencia": {"inferencia_s": "predict local y validación de cajas; sin HTTP",
+                       "latencia_s": "lectura JPEG, hash, decodificación, inferencia y conteo; sin HTTP ni carga del modelo",
+                       "http_completa": "no medida en evaluación local; en vivo desde inicio de solicitud hasta uso del resultado"}}
         args.salida.parent.mkdir(parents=True, exist_ok=True)
         args.salida.write_text(json.dumps(informe, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
         print(json.dumps(informe["metricas"], indent=2))

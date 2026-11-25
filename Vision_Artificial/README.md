@@ -85,12 +85,13 @@ Campos neuronales configurables en config.json:
     "imgsz": 960,
     "confianza": 0.15,
     "iou": 0.45,
-    "clases": [2, 3, 5, 7]
+    "clases": [2, 3, 5, 7],
+    "agnostic_nms": false
   },
   "deteccion_activa": true,
-  "filtro_mediana": true,
-  "max_antiguedad_imagen_s": 30.0,
-  "max_antiguedad_resultado_s": 30.0,
+  "filtro_mediana": false,
+  "max_antiguedad_imagen_s": 6.0,
+  "max_antiguedad_resultado_s": 12.0,
   "directorio_diagnosticos": "diagnosticos"
 }
 ```
@@ -187,11 +188,50 @@ el instante monotónico de recepción del JPEG ni quita un error de captura.
 La vigencia se calcula desde la foto, no desde la última consulta de estado.
 S tampoco se rehabilita para una foto caducada solo porque /status responda.
 
-El límite inicial de 30 s es configurable y debe ajustarse con las mediciones
-reales de CPU; una ejecución de más de ese límite se descarta. La latencia total
-desde recepción incluye decodificación, espera y procesamiento hasta publicar
-el resultado. La antigüedad actual sigue creciendo después. Una foto nueva puede
-llegar mientras se muestra un resultado anterior todavía vigente.
+La revisión 04.1 propone **6 s para imagen** y **12 s para resultado**, configurables.
+Los valores explícitos de config.json prevalecen; no se sobrescribe ese archivo.
+Imagen limita entrada y guardado; resultado limita cada inferencia y su uso.
+La comprobación de edad se repite al utilizar el resultado, no solo al publicarlo.
+El diagnóstico registra edad_al_utilizar_s.
+
+No existe un timestamp fiable de exposición del sensor. Se usa como origen
+monotónico conservador el **inicio de la solicitud /capture**, incluyendo todos sus
+reintentos. recibida_monotonic conserva el fin de recepción. La latencia total
+en vivo incluye HTTP, reintentos, decodificación, espera e inferencia hasta publicar;
+la edad de utilización incluye además el tiempo posterior. No mide la antigüedad
+previa de una fotografía que pudiera estar almacenada en la cámara ni garantiza
+tiempo real del sensor. /status nunca renueva estos tiempos.
+
+Cada fallo notifica al adquisidor **antes de esperar el reintento**, invalida la
+captura y aumenta la época. Si el siguiente intento funciona, la época no retrocede:
+un resultado anterior sigue inválido aunque la interfaz no observe el fallo intermedio.
+Se requiere un JPEG nuevo; /status no rehabilita el anterior. Los timeouts conservados
+(3 s conexión, 15 s lectura, dos reintentos y pausas de 1/2 s) pueden demorar la
+confirmación del primer fallo. La imagen caduca a los 6 s durante esa espera.
+Requests limita inactividad de lectura; el control total se comprueba entre bloques,
+sin garantizar interrumpir cualquier lectura bloqueada en un plazo estricto.
+Ensayar desconexiones físicas y ajustar timeouts con mediciones reales.
+
+### Invalidación ROI persistente
+
+V o un cambio relevante de resolución crea atómicamente **roi.json.invalidada**
+junto a la calibración. Se conservan roi.json y sus coordenadas como referencia.
+Al reabrir, incluso volviendo a la resolución anterior, ambas ROI siguen pendientes.
+El formato versión 1 previo sigue siendo compatible; la marca local está ignorada.
+Reconfirmar ambas ROI con Enter y **guardar correctamente con G** antes de reanudar.
+Confirmar en memoria o cerrar no rehabilita: solo el guardado atómico elimina la
+marca. Un fallo de guardado conserva la invalidación. No borrar ni separar la marca
+para recuperar validez. Si no puede persistirse por disco/permisos, se informa el
+error y se detiene la aplicación; resolverlo y recalibrar antes de usar conteos.
+
+### Supresión entre clases
+
+agnostic_nms es booleano, inicialmente false, y se pasa explícitamente a predict.
+Comparar false/true reiniciando con las mismas escenas, ROI y parámetros, guardando
+informes distintos. true puede reducir duplicados de un vehículo asignado a clases
+COCO diferentes; también puede suprimir vehículos próximos con cajas solapadas.
+No se añade supresión manual ni se presupone beneficio: medir falsos positivos y
+negativos. Consultar la [documentación oficial de predict](https://docs.ultralytics.com/modes/predict/).
 
 ### Concurrencia y filtro
 
@@ -204,6 +244,13 @@ El trabajo incorpora la foto, ID, secuencia y una copia de las ROI. Revisión de
 ROI y época de adquisición forman el contexto. Pausar, desconectar, invalidar
 calibración o cambiar ROI invalida trabajos en curso: su resultado se descarta
 si el contexto ya cambió. Al reanudar se espera una secuencia nueva.
+
+El filtro está **desactivado inicialmente**. Tres inferencias consecutivas de unos
+4.35 s representarían aproximadamente **13 s de procesamiento**, además de HTTP y
+esperas. Es una estimación de pruebas individuales, no rendimiento sostenido.
+La ventana de tres muestras puede caducar con el límite de 12 s: comprobar edades
+y muestras. Comparar instantáneos/filtrados activando filtro_mediana explícitamente
+con escenas equivalentes; no se amplían límites automáticamente para llenar el filtro.
 
 La mediana opcional usa las últimas tres inferencias válidas nuevas para N1, N2
 y N_fuera; total y D filtrados se derivan de esos tres valores. Con una o dos
@@ -244,8 +291,18 @@ Registrar manualmente una foto, sustituyendo NOMBRE_REAL.jpg y sus conteos reale
 
 Los números anteriores son un ejemplo de uso, no anotaciones de una foto real.
 El CSV por defecto se guarda en evaluaciones/escenas.csv y contiene:
-archivo,n1_real,n2_real,grupo,uso. No copia imágenes ni entrena. Rechaza registros
+archivo,n1_real,n2_real,grupo,uso,sha256. No copia imágenes ni entrena. Rechaza registros
 duplicados y grupos mezclados entre desarrollo y final.
+
+Admite CSV anteriores sin hash; al registrar otra escena los actualiza atómicamente
+con los hashes actuales. No modifica las fotos. Luego rechaza cambios de contenido
+respecto al hash registrado. Compara SHA-256 de todas las fotografías antes de
+filtrar --uso: nombres diferentes no permiten duplicarlas ni compartirlas entre
+desarrollo/final. Cada resultado incluye el hash de los bytes evaluados. Esta
+identidad por bytes no detecta recodificaciones ni escenas visualmente casi idénticas;
+mantener grupos independientes. El informe registra versiones de Python, Ultralytics
+y PyTorch, nombre del modelo y hashes de pesos/roi.json. Conservar informe, CSV y
+calibración para reproducir; también se comprueba la marca de invalidación ROI.
 
 ```powershell
 .\.venv\Scripts\python.exe evaluar.py --uso desarrollo --salida evaluaciones/desarrollo.json
@@ -282,7 +339,7 @@ en vivo. La frecuencia es fotos válidas / duración total del recorrido local.
 
 Verificación del **25 de noviembre de 2026**:
 
-- **51 pruebas correctas**, incluidas las 29 anteriores. Las nuevas usan detecciones
+- **60 pruebas correctas**, incluidas las 51 de la tarea 04. Las nuevas usan detecciones
   simuladas y no necesitan PyTorch, Ultralytics, red ni descargar YOLO11x.
 - Cobertura de centros, clases/confianza, ocupación y fuera, cero válido, ROI
   inválidas/pendientes, error neuronal, edad, desconexión, cambio de contexto
@@ -320,6 +377,13 @@ del equipo debe acordarse; este cambio no la asigna automáticamente.
 | Imagen no cambia en pausa | Espacio reanuda; /status no renueva esa foto antigua |
 | Guardado S rechazado | Foto caducada, captura inválida o hash duplicado; obtener una nueva foto |
 | Ventana ausente | Usar opencv-python en escritorio y el intérprete del venv, no headless |
+
+Revisión 04.1: prueba adicional sobre el mismo JPEG local SVGA y una sola carga de
+YOLO11x: agnostic_nms=false, 13.95 s; true, 5.31 s; cuatro predicciones car en ambos.
+El orden y la primera ejecución influyen: no es un benchmark ni demuestra beneficio
+de NMS o precisión. La primera superaría el límite de 12 s y se descartaría en vivo.
+pip check correcto; 60 pruebas (51 existentes y 9 nuevas), con migración CSV,
+hashes, épocas, reintentos, edad desde solicitud y reapertura de ROI invalidada.
 
 Referencias oficiales:
 [YOLO11](https://docs.ultralytics.com/models/yolo11/),

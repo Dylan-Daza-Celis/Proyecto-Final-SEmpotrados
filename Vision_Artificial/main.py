@@ -73,8 +73,8 @@ class Visualizador:
         self.resultado_visible = None
         self.informacion_diagnostico = {}
         self.ultima_secuencia_roi = -1
-        self.limite_imagen = self.configuracion.get("max_antiguedad_imagen_s", max(5, intervalo * 3))
-        self.limite_resultado = self.configuracion.get("max_antiguedad_resultado_s", 30)
+        self.limite_imagen = self.configuracion.get("max_antiguedad_imagen_s", 6.0)
+        self.limite_resultado = self.configuracion.get("max_antiguedad_resultado_s", 12.0)
         self.mensaje = "Esperando una fotografia. 1/2: editar ROI sobre imagen pausada."
 
     def raton(self, evento, x, y, _banderas, _parametro):
@@ -215,10 +215,10 @@ class Visualizador:
                 cv2.polylines(imagen, [puntos], False, (50, 50, 255), 1)
                 for punto in puntos:
                     cv2.circle(imagen, tuple(punto), 3, (50, 50, 255), -1)
-            edad = time.monotonic() - self.captura.recibida_monotonic
+            edad = time.monotonic() - self.captura.origen_monotonic
             lineas = [
                 f"{ancho}x{alto} | JPEG {len(self.captura.jpeg)} bytes | ID {self.captura.identificador or 'no disponible'}",
-                f"HTTP {self.captura.recepcion_s * 1000:.0f} ms | decode {self.captura.decodificacion_s * 1000:.1f} ms | {estado.frecuencia_hz:.2f} Hz",
+                f"HTTP ultimo intento {self.captura.recepcion_s * 1000:.0f} ms | decode {self.captura.decodificacion_s * 1000:.1f} ms | {estado.frecuencia_hz:.2f} Hz",
                 f"{'PAUSADA' if self.pausa else 'NUEVA' if nueva else 'ULTIMA'} | edad {edad:.1f} s",
             ]
         fresca = captura_vigente(estado, self.captura, self.limite_imagen)
@@ -235,7 +235,7 @@ class Visualizador:
             f = resultado.filtrado
             lineas.append(f"{'Referencia NO valida' if motivo else 'Instantaneo'}: N1={c.n1} N2={c.n2} fuera={c.n_fuera} total={c.n_total} D={c.diferencia}")
             lineas.append(f"{'Filtro de referencia NO valido' if motivo else 'Filtrado'}: N1={f.n1} N2={f.n2} fuera={f.n_fuera} D={f.diferencia} | muestras={0 if motivo else resultado.muestras_validas}")
-            lineas.append(f"Inferencia {resultado.inferencia_s:.2f} s | latencia total {resultado.latencia_total_s:.2f} s | edad {time.monotonic()-resultado.captura.recibida_monotonic:.1f} s")
+            lineas.append(f"Inferencia {resultado.inferencia_s:.2f} s | latencia total {resultado.latencia_total_s:.2f} s | edad {time.monotonic()-resultado.captura.origen_monotonic:.1f} s")
         if estado_ia:
             modelo_nombre = Path(self.configuracion.get("detector", {}).get("pesos", "yolo11x.pt")).name
             lineas.append(f"{modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
@@ -279,6 +279,8 @@ def main(argumentos=None):
         configuracion = cargar_configuracion(args.config, args.url)
         ruta_roi = configuracion["ruta_roi"]
         regiones = GestorROI.cargar(ruta_roi) if ruta_roi.exists() else GestorROI()
+        if not ruta_roi.exists():
+            regiones.vincular_persistencia(ruta_roi)
         almacenamiento = GestorDataset(configuracion["directorio_almacenamiento"])
         if args.pesos:
             configuracion["detector"]["pesos"] = args.pesos.resolve()
@@ -293,7 +295,8 @@ def main(argumentos=None):
         parametros = configuracion["detector"]
         print(f"Modelo local {Path(parametros['pesos']).name}; device={parametros['dispositivo']}; "
               f"imgsz={parametros['imgsz']}; conf={parametros['confianza']}; iou={parametros['iou']}; "
-              f"clases={parametros['clases']}. Fotografía física requerida: 800x600, configurada desde la web.")
+              f"clases={parametros['clases']}; agnostic_nms={parametros['agnostic_nms']}. "
+              "Fotografía física requerida: 800x600, configurada desde la web.")
         adquisidor.start()
         if configuracion["deteccion_activa"]:
             trabajador.start()

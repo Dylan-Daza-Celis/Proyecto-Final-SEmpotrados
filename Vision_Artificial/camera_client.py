@@ -50,6 +50,11 @@ class Captura:
     decodificacion_s: float
     calidad_reportada: int | None = None
     estado_reportado: dict | None = None
+    iniciada_monotonic: float | None = None
+
+    @property
+    def origen_monotonic(self):
+        return self.recibida_monotonic if self.iniciada_monotonic is None else min(self.iniciada_monotonic, self.recibida_monotonic)
 
 
 class ClienteCamara:
@@ -65,6 +70,7 @@ class ClienteCamara:
         self.sesion = sesion if sesion is not None else requests.Session()
         # La cámara está en la LAN: no enviar consultas a proxies del entorno.
         self.sesion.trust_env = False
+        self.al_fallo = None
 
     def cerrar(self):
         self.sesion.close()
@@ -106,10 +112,12 @@ class ClienteCamara:
                 # No imprimir URL/errores crudos de Requests: pueden contener datos locales.
                 ultimo_error = error if isinstance(error, ErrorCamara) else ErrorCamara(
                     "Timeout de cámara." if isinstance(error, requests.Timeout) else "Error de conexión HTTP.")
+                if self.al_fallo is not None:
+                    self.al_fallo(ultimo_error)  # Invalidar antes de esperar/reintentar.
                 if intento < self.reintentos and not self.detener.wait(self.pausa * (intento + 1)):
                     continue
                 break
-        raise ErrorCamara(str(ultimo_error)) from ultimo_error
+        raise ultimo_error
 
     def consultar_estado(self):
         contenido, _, _ = self._solicitar("/status", "application/json", 65536)
@@ -123,6 +131,7 @@ class ClienteCamara:
         return estado
 
     def capturar(self, estado=None):
+        iniciada_monotonic = time.monotonic()  # Incluye todos los intentos; no hay reloj del sensor.
         contenido, identificador, recepcion_s = self._solicitar("/capture", "image/jpeg", 5 * 1024 * 1024)
         recibida_monotonic = time.monotonic()
         if len(contenido) < 4 or not contenido.startswith(b"\xff\xd8") or not contenido.endswith(b"\xff\xd9"):
@@ -143,7 +152,7 @@ class ClienteCamara:
                 calidad = valor
         return Captura(contenido, imagen, identificador, datetime.now(timezone.utc).isoformat(),
                        recibida_monotonic, recepcion_s, decodificacion_s, calidad,
-                       dict(estado) if estado is not None else None)
+                       dict(estado) if estado is not None else None, iniciada_monotonic)
 
 
 @dataclass(frozen=True)
@@ -162,7 +171,7 @@ def captura_vigente(estado, captura, limite_s, ahora=None):
     """/status confirma transporte, jamás renueva la fecha del JPEG."""
     ahora = time.monotonic() if ahora is None else ahora
     return (captura is not None and estado.conectado and not estado.error_captura and
-            0 <= ahora - captura.recibida_monotonic <= limite_s and
+            0 <= ahora - captura.origen_monotonic <= limite_s and
             0 <= ahora - estado.confirmada_monotonic <= limite_s)
 
 
@@ -187,12 +196,18 @@ class Adquisidor(threading.Thread):
         with self._mutex:
             self._estado = replace(self._estado, **cambios)
 
+    def _fallo(self, error):
+        with self._mutex:
+            self._estado = replace(self._estado, conectado=error.tipo != "conexion",
+                error_captura=True, mensaje=str(error), frecuencia_hz=0.0, epoca=self._estado.epoca + 1)
+
     def run(self):
         anterior = None
         try:
             with self.fabrica_cliente(self.url_base, detener=self.detener, **{
                     clave: self.configuracion[clave] for clave in (
                         "timeout_conexion_s", "timeout_lectura_s", "reintentos", "pausa_reintento_s")}) as cliente:
+                cliente.al_fallo = self._fallo
                 while not self.detener.is_set():
                     inicio = time.monotonic()
                     try:
@@ -211,10 +226,7 @@ class Adquisidor(threading.Thread):
                                            confirmada_monotonic=time.monotonic(), frecuencia_hz=frecuencia,
                                            error_captura=False)
                     except ErrorCamara as error:
-                        actual = self.obtener_estado()
-                        self._publicar(conectado=error.tipo != "conexion",
-                                       error_captura=True, mensaje=str(error), frecuencia_hz=0.0,
-                                       epoca=actual.epoca + 1)
+                        self._fallo(error)
                         anterior = None
                     intervalo = self.configuracion["intervalo_captura_s"]
                     self.detener.wait(max(0.05, intervalo - (time.monotonic() - inicio)))
