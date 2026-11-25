@@ -1,5 +1,10 @@
 # ESP32-C6: dos semáforos en demostración autónoma
 
+Revisión para tarea 07: [diseño del modo conectado](CONTRATO_CONECTADO07.md).
+La vigencia futura deberá incluir edad de origen, transporte e identidad de
+resultado/sesión; los reenvíos no renovarán datos. El firmware actual sigue siendo
+demostración, sin UDP/Wi-Fi ni cambios al algoritmo adaptativo.
+
 ESP-IDF nativo v6.0.2, C y FreeRTOS. Conserva el modo convencional 5/2/1 s y añade
 [prioridad adaptativa simulada de tarea 06](PRIORIDAD06.md), verde 5..13 s con
 alternancia obligatoria y despejes completos. El inicio mantiene ambos rojos 1 s.

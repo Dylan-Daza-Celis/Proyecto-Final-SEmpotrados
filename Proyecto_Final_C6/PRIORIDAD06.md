@@ -1,5 +1,10 @@
 # Tarea 06 B: prioridad adaptativa con demanda simulada
 
+Para la próxima integración, ver el [contrato conectado propuesto](CONTRATO_CONECTADO07.md):
+edad de origen y transporte, observación frente a reenvío, sesiones/reinicios y
+salida controlada a rojos. Es diseño pendiente de implementar; esta demostración
+mantiene su algoritmo, límites, modos y tratamiento local de demanda.
+
 Se mantiene el mismo pinout **provisional** y una única tarea propietaria GPIO.
 No se habilitan salidas sin SEMAFORO_PINOUT_CONFIRMADO. No hay Wi-Fi, UDP ni
 conteos de YOLO: el algoritmo usa solo escenarios simulados o ausencia explícita.
