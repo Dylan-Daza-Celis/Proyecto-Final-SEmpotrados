@@ -164,17 +164,23 @@ def main(argumentos=None):
     parser.add_argument("--escenas", type=Path, default=RAIZ / "evaluaciones/escenas.csv")
     parser.add_argument("--salida", type=Path, default=RAIZ / "evaluaciones/resumen.json")
     parser.add_argument("--uso", choices=("desarrollo", "final"), default="desarrollo")
+    parser.add_argument('--candidato-b',action='store_true',help='Probar 960/.10/.45/NMS false en desarrollo; no cambia config.json')
     parser.add_argument("--registrar", type=Path, help="Añadir una fotografía y conteos manuales al CSV")
     parser.add_argument("--n1", type=int)
     parser.add_argument("--n2", type=int)
     parser.add_argument("--grupo", help="Sesión/escena; no mezclar casi duplicados con evaluación final")
     args = parser.parse_args(argumentos)
+    if args.candidato_b and (args.uso!='desarrollo' or args.registrar):
+        parser.error('El candidato B solo permite evaluar escenas de desarrollo ya anotadas.')
     try:
         if args.registrar:
             registrar_escena(args.escenas, args.registrar, args.n1, args.n2, args.grupo, args.uso)
             print("Escena registrada; no se ha ejecutado inferencia ni copiado la fotografía.")
             return 0
         configuracion = cargar_configuracion(args.config, requiere_url=False)
+        if args.candidato_b:
+            configuracion['detector'].update(backend='pytorch',dispositivo='cpu',imgsz=960,
+                confianza=.10,iou=.45,agnostic_nms=False)
         if args.pesos:
             configuracion["detector"]["pesos"] = args.pesos.resolve()
         escenas = [f for f in leer_escenas(args.escenas) if f["uso"] == args.uso]

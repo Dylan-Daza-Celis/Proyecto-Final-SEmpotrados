@@ -14,7 +14,7 @@ import numpy as np
 
 from benchmark_inferencia import resumen
 from comparar_motores import correspondencias
-from contador_vehiculos import contar_vehiculos
+from contador_vehiculos import contar_vehiculos,asignar_roi
 from detector_vehiculos import CLASES_COCO, Deteccion, DetectorVehiculos
 from evaluar import huella_archivo, leer_escenas, evaluar_escenas, calcular_metricas
 from main import RAIZ, cargar_configuracion
@@ -77,9 +77,10 @@ def dibujar(imagen, detecciones, regiones=None, valido=False):
     salida=regiones.dibujar(imagen) if regiones else imagen.copy()
     resolucion=(imagen.shape[1],imagen.shape[0])
     for d in detecciones:
-        x1,y1,x2,y2=map(round,d['caja']); centro=((x1+x2)//2,(y1+y2)//2)
-        carril = ('ROI1' if regiones.contiene_punto(1,centro,resolucion) else
-                  'ROI2' if regiones.contiene_punto(2,centro,resolucion) else 'FUERA') if regiones and valido else ''
+        deteccion = Deteccion(tuple(d['caja']),d['clase'],d['nombre'],d['confianza'])
+        x1,y1,x2,y2=map(round,deteccion.caja)
+        centro=tuple(map(round,deteccion.centro))  # Redondear solo para dibujar.
+        carril = asignar_roi(deteccion,regiones,resolucion) if regiones and valido else ''
         cv2.rectangle(salida,(x1,y1),(x2,y2),(30,220,220),2)
         cv2.circle(salida,centro,3,(0,0,255),-1)
         cv2.putText(salida,f"{d['nombre']} {d['confianza']:.3f} {carril}",(x1,max(15,y1-3)),
@@ -104,7 +105,7 @@ def hipotesis(operativas, exploratorias, umbral):
     return notas
 
 
-def main():
+def main(argumentos=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,default=RAIZ/'config.json')
     parser.add_argument('--archivos',type=Path,nargs='+')
@@ -114,7 +115,9 @@ def main():
     parser.add_argument('--barrido',action='store_true',help='A..E y config local; ambas opciones NMS por separado')
     parser.add_argument('--explorar',action='store_true',help='Todas las clases, conf .03; solo diagnóstico')
     parser.add_argument('--repeticiones',type=int,default=1)
-    args=parser.parse_args()
+    args=parser.parse_args(argumentos)
+    if args.uso=='final' and (args.barrido or args.explorar):
+        parser.error('Escenas finales reservadas: no se permite barrido ni exploracion para seleccionar parametros.')
     if args.repeticiones<1: parser.error('repeticiones debe ser positivo')
     config=cargar_configuracion(args.config,requiere_url=False)
     parametros=config['detector']
@@ -174,9 +177,8 @@ def main():
                         if not motivo:
                             convertidas=[Deteccion(tuple(d['caja']),d['clase'],d['nombre'],d['confianza']) for d in detecciones]
                             conteo=contar_vehiculos(convertidas,regiones,(800,600)).a_dict()
-                            for d in detecciones:
-                                d['roi_asignada']=('ROI1' if regiones.contiene_punto(1,d['centro'],(800,600)) else
-                                    'ROI2' if regiones.contiene_punto(2,d['centro'],(800,600)) else 'FUERA')
+                            for d,convertida in zip(detecciones,convertidas):
+                                d['roi_asignada']=asignar_roi(convertida,regiones,(800,600))
                         registro=dict(revision=revision,configuracion=nombre,repeticion=repeticion,
                             sha256=huella,calidad_reportada=calidad.get(huella),resolucion=[800,600],
                             parametros={k:str(v) if isinstance(v,Path) else v for k,v in elegidos.items()},

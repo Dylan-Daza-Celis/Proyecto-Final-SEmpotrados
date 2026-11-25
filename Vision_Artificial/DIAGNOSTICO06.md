@@ -70,13 +70,20 @@ necesariamente las cajas del JPEG, pero puede caducar resultados en vivo.
 ## Verdad manual y repeticiones
 
 ```powershell
-.\.venv\Scripts\python.exe diagnosticar_deteccion.py --escenas evaluaciones/escenas.csv --uso final --barrido --salida diagnosticos/final06
+.\.venv\Scripts\python.exe diagnosticar_deteccion.py --escenas evaluaciones/escenas.csv --uso desarrollo --barrido --salida diagnosticos/desarrollo06
 ```
 
 Reutiliza el registro/validación de evaluar.py y sus métricas de N1/N2, exactitud
 conjunta y MAE cuando hay conteos manuales y ROI válidas. Sin anotaciones de cajas
 no se calculan falsos positivos/negativos: un error de conteo puede combinar ambos.
 Reservar escenas finales independientes y revisar los desacuerdos individualmente.
+El barrido y la exploración se rechazan con --uso final, antes de cargar el modelo
+o crear resultados. Si se indican JPEG sueltos con --archivos, deben ser escenas
+de desarrollo: el programa no puede deducir su partición sin un manifiesto.
+No reutilizar fotografías finales para elegir umbrales, NMS o resolución.
+La evaluación final utiliza una configuración previamente fijada en desarrollo,
+sin barrido ni exploración. Inspeccionar sus errores no permite retocar parámetros
+y presentar esas mismas escenas otra vez como una prueba independiente.
 
 comparar_motores.py conserva ahora todas las inferencias repetidas por SHA-256:
 listas de referencia/alternativa, comparaciones por repetición y estabilidad contra
@@ -109,6 +116,38 @@ vértice, una calibración manual normal no cabría en 6 s; la vigencia se compr
 al elegir la referencia y la conexión se vuelve a validar al confirmar.
 
 Fuente técnica y contrato de predict: https://docs.ultralytics.com/modes/predict/.
+
+## Correcciones pendientes de tarea 07 incorporadas
+
+G vuelve a comprobar conexión HTTP reciente, ausencia de error, época de adquisición,
+foto congelada y resolución, incluso después de confirmar ambas ROI. Ante un fallo
+no escribe roi.json ni elimina la marca de invalidación. Repetir V tras reconexión
+para obtener otra referencia. No basta que /status haya vuelto a responder: la
+época de la referencia debe coincidir. Un error de disco conserva el contexto.
+
+Contador, etiquetas visuales y metadatos de diagnóstico comparten asignar_roi y
+Deteccion.centro en coma flotante. El redondeo solo dibuja cajas/círculos; nunca
+decide pertenencia. Las regresiones incluyen centros a ambos lados de los bordes.
+
+Para probar B sobre verdad manual de desarrollo sin cambiar config.json:
+
+```powershell
+.\.venv\Scripts\python.exe evaluar.py --candidato-b --escenas evaluaciones/escenas.csv --uso desarrollo --salida evaluaciones/candidato_b_desarrollo.json
+```
+
+El indicador selecciona explícitamente PyTorch CPU FP32, imgsz960/conf0.10/IoU0.45,
+agnostic_nms=false en memoria; conserva pesos y configuraciones del usuario. Solo
+acepta desarrollo. Registrar primero N1/N2 reales con --registrar; las métricas
+comparan conteos, no son precisión de cajas ni FP/FN. Una vez elegidos parámetros
+con desarrollo, fijarlos conscientemente para evaluar las escenas finales sin
+--candidato-b ni búsquedas. El programa no modifica automáticamente config.json.
+
+Resultado de esta revisión: 76 pruebas Python correctas (69 previas y 7 nuevas),
+incluido un ensayo de B con JPEG/detector y verdad **simulados** para verificar la
+herramienta; ese resultado no mide precisión de la maqueta. El usuario confirmó
+que las fotos reales aún no están anotadas. La prueba real de B con verdad manual
+queda pendiente; no se fabrican etiquetas ni métricas. pip check y diff --check
+correctos. No se hicieron nuevas mediciones físicas ni se reinstalaron paquetes.
 
 ## Resultado real de la tarea 06
 
