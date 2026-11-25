@@ -102,6 +102,13 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   ROI deben reconfirmarse y guardarse para recuperar validez. agnostic_nms booleano
   explícito. Evaluación con SHA-256, duplicados entre usos, versiones y hashes de
   pesos/calibración; distinguir tiempos locales de HTTP. Mantener rama y PR #4.
+- Tarea 05 A: optimizar YOLO11x sin cambiar pesos/imgsz/umbrales ni precisión
+  automáticamente. Warm-up sintético único, FP32, benchmark 3+20 y procesos
+  independientes para hilos/backend; verificar hilos y tensor efectivos. ONNX
+  dinámico conserva rectángulo LetterBox; OpenVINO requiere validación AMD/FP32.
+  Entorno opcional separado solo con instalación explícita. Mantener referencia
+  PyTorch y selección pendiente sin verdad final. S pausada guarda referencia
+  histórica sin validez de control. Rama feat/yolo11x-inference-optimization.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.

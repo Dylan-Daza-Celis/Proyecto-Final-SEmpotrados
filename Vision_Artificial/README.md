@@ -1,5 +1,9 @@
 # Tarea 04 — YOLO11x y ocupación vehicular por ROI
 
+La [tarea 05 A](OPTIMIZACION.md) añade benchmark sostenido, calentamiento inicial,
+hilos configurables y motores CPU FP32. PyTorch sigue como referencia; 65 pruebas
+automatizadas. S admite referencias históricas pausadas, sin habilitar control.
+
 Aplicación Windows/Python que conserva cliente HTTP, visualizador, calibración y
 guardado de originales de la tarea 03. Añade YOLO11x preentrenado y conteo de
 **ocupación en cada fotografía**, sin tracking, entrenamiento ni UDP.
@@ -339,7 +343,7 @@ en vivo. La frecuencia es fotos válidas / duración total del recorrido local.
 
 Verificación del **25 de noviembre de 2026**:
 
-- **60 pruebas correctas**, incluidas las 51 de la tarea 04. Las nuevas usan detecciones
+- **65 pruebas correctas**, incluidas las 60 de la revisión 04.1. Las nuevas usan detecciones
   simuladas y no necesitan PyTorch, Ultralytics, red ni descargar YOLO11x.
 - Cobertura de centros, clases/confianza, ocupación y fuera, cero válido, ROI
   inválidas/pendientes, error neuronal, edad, desconexión, cambio de contexto

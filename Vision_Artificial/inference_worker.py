@@ -2,6 +2,7 @@
 from dataclasses import dataclass, replace
 import threading
 import time
+import numpy as np
 
 from contador_vehiculos import Conteo, FiltroMediana, contar_vehiculos
 from detector_vehiculos import DetectorVehiculos
@@ -46,7 +47,7 @@ class EstadoInferencia:
 
 
 class TrabajadorInferencia(threading.Thread):
-    def __init__(self, parametros, max_antiguedad_s=12.0, filtro=True, fabrica_detector=DetectorVehiculos):
+    def __init__(self, parametros, max_antiguedad_s=12.0, filtro=True, fabrica_detector=DetectorVehiculos, calentamiento=0):
         super().__init__(name="inferencia_yolo", daemon=False)
         self.parametros = dict(parametros)
         self.limite = max_antiguedad_s
@@ -67,12 +68,14 @@ class TrabajadorInferencia(threading.Thread):
         self._ultimo_fin = None
         self._filtro = FiltroMediana(filtro)
         self._tiempos_muestras = []
+        self.calentamiento = calentamiento
+        self._preparando = bool(calentamiento)
+        self._no_antes = 0.0
+        self._fase_preparacion = 'CARGANDO MODELO'
 
     def _reiniciar_filtro(self):
         self._filtro.reiniciar()
         self._tiempos_muestras.clear()
-        self._ultimo_fin = None
-        self._frecuencia = 0.0
         if self._resultado is not None:
             # Una mediana publicada tampoco debe conservar muestras caducadas.
             self._resultado = replace(self._resultado, filtrado=self._resultado.instantaneo, muestras_validas=0)
@@ -85,12 +88,16 @@ class TrabajadorInferencia(threading.Thread):
                     self._omitidos += 1
                 self._pendiente = None
                 self._reiniciar_filtro()
+                self._ultimo_fin = None
+                self._frecuencia = 0.0
             self._suspendido = True
             self._motivo = motivo
 
     def enviar(self, captura, secuencia, regiones, epoca=0):
         contexto = (regiones.firma(), epoca)
         with self._condicion:
+            if captura.origen_monotonic < self._no_antes:
+                return False
             if contexto != self._contexto or self._suspendido:
                 self._generacion += 1
                 self._contexto = contexto
@@ -99,6 +106,8 @@ class TrabajadorInferencia(threading.Thread):
                 self._pendiente = None
                 self._suspendido = False
                 self._reiniciar_filtro()
+                self._ultimo_fin = None
+                self._frecuencia = 0.0
                 self._motivo = "Inferencia pendiente"
             if secuencia <= self._ultima_secuencia or self.detener.is_set():
                 return False
@@ -113,9 +122,9 @@ class TrabajadorInferencia(threading.Thread):
 
     def obtener_estado(self):
         with self._condicion:
-            if any(time.monotonic() - t > self.limite for t in self._tiempos_muestras):
+            if self._filtro.habilitado and any(time.monotonic() - t > self.limite for t in self._tiempos_muestras):
                 self._reiniciar_filtro()
-            return EstadoInferencia(self._resultado, self._error, self._motivo,
+            return EstadoInferencia(self._resultado, self._error, self._fase_preparacion if self._preparando else self._motivo,
                                     self._procesando, self._omitidos, self._frecuencia, self._generacion)
 
     def cerrar(self):
@@ -127,10 +136,23 @@ class TrabajadorInferencia(threading.Thread):
     def run(self):
         try:
             detector = self.fabrica_detector(self.parametros)  # Una sola carga, dentro del trabajador.
+            if self.calentamiento:
+                with self._condicion:
+                    self._fase_preparacion = 'CALENTANDO MODELO'
+                detector.calentar(self.calentamiento, self.detener)
+                with self._condicion:
+                    self._no_antes = time.monotonic()
+                    if self._pendiente is not None:
+                        self._omitidos += 1
+                    self._pendiente = None
+                    self._motivo = 'Inferencia pendiente: esperando captura posterior al calentamiento'
+            with self._condicion:
+                self._preparando = False
         except Exception as error:
             with self._condicion:
                 self._error = f"Error al cargar modelo: {error}"
                 self._motivo = "Error de inferencia"
+                self._preparando = False
             return
         while not self.detener.is_set():
             with self._condicion:
@@ -159,15 +181,16 @@ class TrabajadorInferencia(threading.Thread):
                         self._motivo = "Resultado neuronal antiguo"
                         self._reiniciar_filtro()
                         continue
-                    if any(final - t > self.limite for t in self._tiempos_muestras):
+                    if self._filtro.habilitado and any(final - t > self.limite for t in self._tiempos_muestras):
                         self._reiniciar_filtro()
                     filtrado, muestras = self._filtro.agregar(secuencia, conteo)
-                    self._tiempos_muestras = (self._tiempos_muestras + [captura.origen_monotonic])[-3:]
+                    if self._filtro.habilitado:
+                        self._tiempos_muestras = (self._tiempos_muestras + [captura.origen_monotonic])[-3:]
                     self._frecuencia = 0.0 if self._ultimo_fin is None else 1 / max(final - self._ultimo_fin, 1e-6)
                     self._ultimo_fin = final
                     self._resultado = ResultadoInferencia(captura, secuencia, detecciones, conteo, filtrado,
                         muestras, segundos, final, final - captura.origen_monotonic,
-                        str(self.parametros["pesos"]), contexto, generacion)
+                        self.parametros.get('backend', 'pytorch') + ': ' + str(self.parametros["pesos"]), contexto, generacion)
                     self._error = ""
                     self._motivo = ""
             except Exception as error:

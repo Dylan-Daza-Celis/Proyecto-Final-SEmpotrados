@@ -23,3 +23,6 @@ runs/
 /evaluaciones/
 .ultralytics/
 *.invalidada
+.venv-opt/
+/exportados/
+/benchmarks/

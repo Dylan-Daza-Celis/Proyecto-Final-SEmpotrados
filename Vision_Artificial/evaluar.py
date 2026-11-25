@@ -186,10 +186,13 @@ def main(argumentos=None):
         detector = DetectorVehiculos(configuracion["detector"])
         reproducibilidad = metadatos_reproducibilidad(configuracion["detector"]["pesos"],
                                                      args.roi or configuracion["ruta_roi"])
+        reproducibilidad['backend'] = configuracion['detector']['backend']
+        if configuracion['detector']['backend'] != 'pytorch':
+            reproducibilidad['modelo_exportado_sha256'] = huella_archivo(configuracion['detector']['modelo_exportado'])
         registros, duracion = evaluar_escenas(escenas, regiones, detector)
         informe = {"fecha_utc": datetime.now(timezone.utc).isoformat(), "uso": args.uso,
                    "reproducibilidad": reproducibilidad,
-                   "parametros": configuracion["detector"] | {"pesos": str(configuracion["detector"]["pesos"])},
+                   "parametros": {k: str(v) if isinstance(v, Path) else v for k,v in configuracion['detector'].items()},
                    "metricas": calcular_metricas(registros, duracion), "escenas": registros,
                    "latencia": {"inferencia_s": "predict local y validación de cajas; sin HTTP",
                        "latencia_s": "lectura JPEG, hash, decodificación, inferencia y conteo; sin HTTP ni carga del modelo",

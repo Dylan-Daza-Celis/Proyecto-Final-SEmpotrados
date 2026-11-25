@@ -1,0 +1,7 @@
+# Entorno separado; reutilizar los paquetes de .venv mediante referencia.pth local.
+onnx==1.23.2
+onnxruntime==1.32.0
+ml_dtypes==0.7.0
+protobuf==7.36.2
+flatbuffers==25.12.19
+# OpenVINO opcional: no instalado ni verificado en este equipo AMD.

@@ -46,6 +46,10 @@ def cargar_configuracion(ruta, url=None, requiere_url=True):
             raise ValueError(f"{clave} debe ser booleano.")
     configuracion["detector"] = validar_parametros(configuracion["detector"])
     configuracion["detector"]["pesos"] = (ruta.parent / configuracion["detector"]["pesos"]).resolve()
+    if configuracion['detector']['modelo_exportado']:
+        configuracion['detector']['modelo_exportado'] = (ruta.parent / configuracion['detector']['modelo_exportado']).resolve()
+    if type(configuracion['calentamiento_inferencias']) is not int or not 0 <= configuracion['calentamiento_inferencias'] <= 10:
+        raise ValueError('calentamiento_inferencias debe estar entre 0 y 10.')
     for clave in ("directorio_almacenamiento", "ruta_roi", "directorio_diagnosticos"):
         if not isinstance(configuracion[clave], str) or not configuracion[clave].strip():
             raise ValueError(f"{clave} debe ser una ruta no vacía.")
@@ -158,12 +162,14 @@ class Visualizador:
                 self.mensaje = str(error)
         elif tecla in (ord("s"), ord("S")):
             estado = self.adquisidor.obtener_estado()
-            if not captura_vigente(estado, self.captura, self.limite_imagen):
+            historica = self.pausa and self.captura is not None
+            if not historica and not captura_vigente(estado, self.captura, self.limite_imagen):
                 self.mensaje = "No se guarda: sin fotografia o conexion reciente confirmada."
             else:
                 try:
-                    ruta = self.almacenamiento.guardar(self.captura)
-                    self.mensaje = "Original guardado: " + ruta.name
+                    ruta = (self.almacenamiento.guardar(self.captura, referencia_historica=True) if historica
+                            else self.almacenamiento.guardar(self.captura))
+                    self.mensaje = ("Original HISTORICO, sin validez de control: " if historica else "Original guardado: ") + ruta.name
                 except (OSError, ValueError) as error:
                     self.mensaje = str(error)
         return True
@@ -238,7 +244,9 @@ class Visualizador:
             lineas.append(f"Inferencia {resultado.inferencia_s:.2f} s | latencia total {resultado.latencia_total_s:.2f} s | edad {time.monotonic()-resultado.captura.origen_monotonic:.1f} s")
         if estado_ia:
             modelo_nombre = Path(self.configuracion.get("detector", {}).get("pesos", "yolo11x.pt")).name
-            lineas.append(f"{modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
+            lineas.append(f"{self.configuracion.get('detector', {}).get('backend', 'pytorch')} {modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
+            if estado_ia.motivo in ('CARGANDO MODELO', 'CALENTANDO MODELO'):
+                lineas[-1] = estado_ia.motivo + ' | ' + lineas[-1]
             lineas.append("D deteccion | C cajas | O ROI | V invalidar calibracion | A diagnostico (S ORIGINAL)")
         self.informacion_diagnostico = (resultado.a_dict(not bool(motivo), motivo) if resultado else
                                       {"valido": False, "motivo": motivo})
@@ -288,7 +296,7 @@ def main(argumentos=None):
             configuracion["deteccion_activa"] = False
         adquisidor = Adquisidor(configuracion["url_base"], configuracion)
         trabajador = TrabajadorInferencia(configuracion["detector"], configuracion["max_antiguedad_resultado_s"],
-                                          configuracion["filtro_mediana"])
+                                          configuracion["filtro_mediana"], calentamiento=configuracion['calentamiento_inferencias'])
         interfaz = Visualizador(adquisidor, regiones, almacenamiento, ruta_roi, configuracion["intervalo_captura_s"],
                                trabajador, configuracion)
         print("Calibración: excluir convergencia y salida. Cambios de cámara/encuadre requieren recalibrar.")

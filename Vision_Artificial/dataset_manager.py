@@ -54,7 +54,7 @@ class GestorDataset:
                 except (ValueError, KeyError, TypeError) as error:
                     raise ValueError(f"Metadatos inválidos en línea {numero}; revise el archivo antes de continuar.") from error
 
-    def guardar(self, captura: Captura):
+    def guardar(self, captura: Captura, referencia_historica=False):
         if (not captura.jpeg.startswith(b"\xff\xd8") or not captura.jpeg.endswith(b"\xff\xd9") or
                 captura.imagen is None or captura.imagen.size == 0):
             raise ValueError("No se guarda una captura inválida.")
@@ -73,6 +73,8 @@ class GestorDataset:
         ruta = self.directorio / nombre
         registro = {
             "archivo": nombre, "sesion": self.sesion, "sha256": huella,
+            "referencia_historica": referencia_historica,
+            "valida_para_control": False if referencia_historica else None,
             "fecha_captura_utc": captura.fecha_utc, "fecha_guardado_utc": fecha_guardado.isoformat(),
             "identificador_captura": captura.identificador, "ancho": captura.imagen.shape[1],
             "alto": captura.imagen.shape[0], "tamano_jpeg_bytes": len(captura.jpeg),

@@ -10,6 +10,7 @@
   "max_antiguedad_imagen_s": 6.0,
   "max_antiguedad_resultado_s": 12.0,
   "deteccion_activa": true,
+  "calentamiento_inferencias": 3,
   "filtro_mediana": false,
   "directorio_diagnosticos": "diagnosticos",
   "detector": {
@@ -19,6 +20,11 @@
     "confianza": 0.15,
     "iou": 0.45,
     "clases": [2, 3, 5, 7],
-    "agnostic_nms": false
+    "agnostic_nms": false,
+    "backend": "pytorch",
+    "modelo_exportado": "",
+    "hilos_cpu": 0,
+    "hilos_interop": 0,
+    "hilos_opencv": 0
   }
 }
