@@ -7,28 +7,32 @@ parametros_prioridad_t prioridad_parametros_iniciales(void)
     return (parametros_prioridad_t){5000, 13000, 2000, 1000, 2, 2000, 20000};
 }
 
-bool prioridad_parametros_validos(parametros_prioridad_t p)
+bool prioridad_parametros_validos(parametros_prioridad_t parametros)
 {
-    uint64_t intervalo =
-        (uint64_t)p.verde_max_ms + 2 * (uint64_t)p.amarillo_ms + 2 * (uint64_t)p.rojo_total_ms;
-    return p.verde_min_ms >= 5000 && p.verde_max_ms >= p.verde_min_ms && p.amarillo_ms >= 2000 &&
-           p.rojo_total_ms >= 1000 && p.umbral > 0 && p.incremento_ms > 0 &&
-           intervalo <= p.objetivo_sin_verde_ms;
+    uint64_t intervalo = (uint64_t)parametros.verde_max_ms + 2 * (uint64_t)parametros.amarillo_ms +
+                         2 * (uint64_t)parametros.rojo_total_ms;
+    return parametros.verde_min_ms >= 5000 && parametros.verde_max_ms >= parametros.verde_min_ms &&
+           parametros.amarillo_ms >= 2000 && parametros.rojo_total_ms >= 1000 &&
+           parametros.umbral > 0 && parametros.incremento_ms > 0 &&
+           intervalo <= parametros.objetivo_sin_verde_ms;
 }
 
-bool prioridad_calcular(parametros_prioridad_t p, int32_t n1, int32_t n2,
+/* Calculo de prioridad: la diferencia decide cual verde puede aumentar. */
+bool prioridad_calcular(parametros_prioridad_t parametros, int32_t n1, int32_t n2,
                         decision_prioridad_t *decision)
 {
-    if (!decision || !prioridad_parametros_validos(p) || n1 < 0 || n1 > 1000 || n2 < 0 ||
+    if (!decision || !prioridad_parametros_validos(parametros) || n1 < 0 || n1 > 1000 || n2 < 0 ||
         n2 > 1000) {
         return false;
     }
     int64_t diferencia = (int64_t)n1 - n2;
     uint64_t magnitud = (uint64_t)(diferencia < 0 ? -diferencia : diferencia);
-    *decision = (decision_prioridad_t){p.verde_min_ms, p.verde_min_ms, (int32_t)diferencia, 0};
-    if (magnitud >= p.umbral) {
-        uint64_t incremento = (magnitud - p.umbral + 1) * (uint64_t)p.incremento_ms;
-        uint32_t limite = p.verde_max_ms - p.verde_min_ms;
+    *decision = (decision_prioridad_t){parametros.verde_min_ms, parametros.verde_min_ms,
+                                       (int32_t)diferencia, 0};
+    if (magnitud >= parametros.umbral) {
+        uint64_t incremento =
+            (magnitud - parametros.umbral + 1) * (uint64_t)parametros.incremento_ms;
+        uint32_t limite = parametros.verde_max_ms - parametros.verde_min_ms;
         if (incremento > limite) {
             incremento = limite;
         }
@@ -81,6 +85,7 @@ const char *controlador_nombre(estado_semaforo_t estado)
         "VERDE_CARRIL_2",     "AMARILLO_CARRIL_2", "ROJO_TOTAL_2_A_1",  "ESTADO_SEGURO"};
     return estado >= ROJO_TOTAL_INICIAL && estado <= ESTADO_SEGURO ? nombres[estado] : "INVALIDO";
 }
+/* Temporizacion: cada fase conserva su inicio y duracion seleccionada. */
 bool controlador_iniciar(controlador_semaforos_t *controlador, tiempos_semaforo_t tiempos,
                          uint64_t ahora_ms)
 {
@@ -126,6 +131,7 @@ resultado_demanda_t controlador_recibir_demanda(controlador_semaforos_t *control
     return gestor_demanda_recibir(&controlador->demanda, demanda, ahora_ms,
                                   controlador->max_edad_demanda_ms);
 }
+/* Estado seguro: una solicitud queda retenida hasta completar despejes. */
 void controlador_solicitar_seguro(controlador_semaforos_t *controlador)
 {
     if (controlador) {
@@ -157,6 +163,7 @@ static bool seleccionar_verde(controlador_semaforos_t *controlador, estado_semaf
                                              : controlador->decision.verde_2_ms;
     return true;
 }
+/* Maquina de estados: como maximo una transicion por actualizacion. */
 bool controlador_actualizar(controlador_semaforos_t *controlador, uint64_t ahora_ms)
 {
     if (!controlador) {
@@ -225,41 +232,41 @@ bool controlador_actualizar(controlador_semaforos_t *controlador, uint64_t ahora
 }
 
 /* 3. Seguridad y recuperacion: no cancelar despejes. */
-bool control_conectado_paso(control_conectado_t *g, controlador_semaforos_t *c,
+bool control_conectado_paso(control_conectado_t *guardia, controlador_semaforos_t *controlador,
                             estado_recepcion_t red, uint64_t ahora)
 {
     bool vigente = red.valido && ahora < red.vence;
-    if (g->generacion != red.generacion || !vigente) {
-        if (g->generacion != red.generacion) {
-            g->resultado = 0;
+    if (guardia->generacion != red.generacion || !vigente) {
+        if (guardia->generacion != red.generacion) {
+            guardia->resultado = 0;
         }
-        g->generacion = red.generacion;
-        c->demanda.disponible = false;
-        controlador_solicitar_seguro(c);
+        guardia->generacion = red.generacion;
+        controlador->demanda.disponible = false;
+        controlador_solicitar_seguro(controlador);
     }
-    bool rearmar = c->estado == ESTADO_SEGURO && vigente && red.recuperable &&
-                   red.atendida == red.generacion && red.resultado != g->resultado;
+    bool rearmar = controlador->estado == ESTADO_SEGURO && vigente && red.recuperable &&
+                   red.atendida == red.generacion && red.resultado != guardia->resultado;
     if (rearmar) {
-        tiempos_semaforo_t tiempos = c->tiempos;
-        parametros_prioridad_t parametros = c->prioridad;
-        uint32_t edad = c->max_edad_demanda_ms;
-        if (!controlador_iniciar(c, tiempos, ahora) ||
-            !controlador_configurar_adaptativo(c, parametros, edad)) {
+        tiempos_semaforo_t tiempos = controlador->tiempos;
+        parametros_prioridad_t parametros = controlador->prioridad;
+        uint32_t edad = controlador->max_edad_demanda_ms;
+        if (!controlador_iniciar(controlador, tiempos, ahora) ||
+            !controlador_configurar_adaptativo(controlador, parametros, edad)) {
             return true;
         }
-        c->carril_inicial = g->ultimo_carril == 1 ? 2 : 1;
+        controlador->carril_inicial = guardia->ultimo_carril == 1 ? 2 : 1;
     }
-    if (vigente && !c->seguro_solicitado && red.resultado != g->resultado) {
-        controlador_recibir_demanda(c, red.demanda, ahora);
-        g->resultado = red.resultado;
+    if (vigente && !controlador->seguro_solicitado && red.resultado != guardia->resultado) {
+        controlador_recibir_demanda(controlador, red.demanda, ahora);
+        guardia->resultado = red.resultado;
     }
-    bool cambio = controlador_actualizar(c, ahora);
+    bool cambio = controlador_actualizar(controlador, ahora);
     return cambio || rearmar;
 }
-void control_conectado_fase_aplicada(control_conectado_t *g, estado_semaforo_t estado)
+void control_conectado_fase_aplicada(control_conectado_t *guardia, estado_semaforo_t estado)
 {
     if (estado == VERDE_CARRIL_1 || estado == VERDE_CARRIL_2) {
-        g->ultimo_carril = estado == VERDE_CARRIL_1 ? 1 : 2;
+        guardia->ultimo_carril = estado == VERDE_CARRIL_1 ? 1 : 2;
     }
 }
 
@@ -268,52 +275,55 @@ static bool es_verde(estado_semaforo_t estado)
 {
     return estado == VERDE_CARRIL_1 || estado == VERDE_CARRIL_2;
 }
-static bool autorizado(control_conectado_t *g, operaciones_conectadas_t op)
+static bool autorizado(control_conectado_t *guardia, operaciones_conectadas_t operaciones)
 {
-    estado_recepcion_t e = op.leer(op.contexto);
-    uint64_t ahora = op.reloj(op.contexto);
-    return e.valido && e.generacion == g->generacion && ahora < e.vence;
+    estado_recepcion_t estado_red = operaciones.leer(operaciones.contexto);
+    uint64_t ahora = operaciones.reloj(operaciones.contexto);
+    return estado_red.valido && estado_red.generacion == guardia->generacion &&
+           ahora < estado_red.vence;
 }
-static bool aplicar(controlador_semaforos_t *c, operaciones_conectadas_t op)
+static bool aplicar(controlador_semaforos_t *controlador, operaciones_conectadas_t operaciones)
 {
     luces_semaforo_t luces;
-    if (!controlador_luces(c->estado, &luces) || !op.escribir(op.contexto, luces)) {
+    if (!controlador_luces(controlador->estado, &luces) ||
+        !operaciones.escribir(operaciones.contexto, luces)) {
         return false;
     }
-    c->inicio_ms = op.reloj(op.contexto);
+    controlador->inicio_ms = operaciones.reloj(operaciones.contexto);
     return true;
 }
-bool aplicacion_conectada(control_conectado_t *g, controlador_semaforos_t *c,
-                          operaciones_conectadas_t op, informe_aplicacion_t *informe)
+bool aplicacion_conectada(control_conectado_t *guardia, controlador_semaforos_t *controlador,
+                          operaciones_conectadas_t operaciones, informe_aplicacion_t *informe)
 {
-    uint64_t inicio = op.reloj(op.contexto);
+    uint64_t inicio = operaciones.reloj(operaciones.contexto);
     *informe = (informe_aplicacion_t){0};
-    if (es_verde(c->estado) && (c->seguro_solicitado || !autorizado(g, op))) {
-        op.invalidar(op.contexto);
-        c->estado = ESTADO_SEGURO;
-        controlador_solicitar_seguro(c);
+    if (es_verde(controlador->estado) &&
+        (controlador->seguro_solicitado || !autorizado(guardia, operaciones))) {
+        operaciones.invalidar(operaciones.contexto);
+        controlador->estado = ESTADO_SEGURO;
+        controlador_solicitar_seguro(controlador);
         informe->interrumpido = true; /* Se venia de rojo: el verde aun no fue escrito. */
     }
-    if (!aplicar(c, op)) {
+    if (!aplicar(controlador, operaciones)) {
         return false;
     }
-    if (es_verde(c->estado)) {
+    if (es_verde(controlador->estado)) {
         informe->verde_aplicado = true;
-        informe->inicio_verde_ms = c->inicio_ms;
-        informe->estado_verde = c->estado;
-        control_conectado_fase_aplicada(g, c->estado);
-        if (!autorizado(g, op)) {
+        informe->inicio_verde_ms = controlador->inicio_ms;
+        informe->estado_verde = controlador->estado;
+        control_conectado_fase_aplicada(guardia, controlador->estado);
+        if (!autorizado(guardia, operaciones)) {
             /* Una invalidacion puede llegar dentro del driver. Ya hubo verde:
              * iniciar amarillo completo ahora, sin salto directo a ambos rojos. */
-            op.invalidar(op.contexto);
-            controlador_solicitar_seguro(c);
-            controlador_actualizar(c, op.reloj(op.contexto));
-            if (!aplicar(c, op)) {
+            operaciones.invalidar(operaciones.contexto);
+            controlador_solicitar_seguro(controlador);
+            controlador_actualizar(controlador, operaciones.reloj(operaciones.contexto));
+            if (!aplicar(controlador, operaciones)) {
                 return false;
             }
             informe->interrumpido = true;
         }
     }
-    informe->duracion_aplicacion_ms = op.reloj(op.contexto) - inicio;
+    informe->duracion_aplicacion_ms = operaciones.reloj(operaciones.contexto) - inicio;
     return true;
 }

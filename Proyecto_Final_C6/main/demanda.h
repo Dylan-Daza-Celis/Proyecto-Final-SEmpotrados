@@ -55,9 +55,9 @@ typedef struct {
     bool tiene_valida, bloqueado, conectado;
 } gestor_recepcion_t;
 bool conteos_decodificar(const char *datos, size_t longitud, mensaje_conteos_t *salida);
-bool recepcion_iniciar(gestor_recepcion_t *g, uint32_t timeout_ms);
-void recepcion_invalidar(gestor_recepcion_t *g);
-void recepcion_conexion(gestor_recepcion_t *g, bool conectado);
-void recepcion_caducar(gestor_recepcion_t *g, uint64_t ahora);
-bool recepcion_recibir(gestor_recepcion_t *g, mensaje_conteos_t m, uint64_t ahora);
-void recepcion_atender(gestor_recepcion_t *g, uint8_t fase, uint64_t generacion);
+bool recepcion_iniciar(gestor_recepcion_t *gestor, uint32_t timeout_ms);
+void recepcion_invalidar(gestor_recepcion_t *gestor);
+void recepcion_conexion(gestor_recepcion_t *gestor, bool conectado);
+void recepcion_caducar(gestor_recepcion_t *gestor, uint64_t ahora_ms);
+bool recepcion_recibir(gestor_recepcion_t *gestor, mensaje_conteos_t mensaje, uint64_t ahora_ms);
+void recepcion_atender(gestor_recepcion_t *gestor, uint8_t fase, uint64_t generacion);

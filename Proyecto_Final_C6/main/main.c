@@ -11,6 +11,13 @@
 
 /* 2. Constantes y configuracion: Kconfig define pines confirmados, modo y tiempos. */
 static const char *TAG = "semaforos";
+enum {
+    PILA_CONTROL_BYTES = 5120,
+    PILA_SIMULADOR_BYTES = 3072,
+    PRIORIDAD_CONTROL = 5,
+    PRIORIDAD_SIMULADOR = 3,
+    PERIODO_CONTROL_MS = 20
+};
 /* 3. Variables y estructuras de ejecucion.
  * GPIO, controlador, tiempos y guardia viven en tarea_controlador: un propietario.
  * Solo comunicacion conserva su estado compartido bajo secciones criticas. */
@@ -84,12 +91,14 @@ static void tarea_controlador(void *parametro)
     vTaskDelete(NULL);
     return;
 #endif
+    // Validar y precargar antes de habilitar las seis salidas.
     semaforo_gpio_t gpio;
     if (!semaforo_gpio_iniciar(&gpio, semaforo_operaciones_idf())) {
         ESP_LOGE(TAG, "Fallo GPIO; transiciones detenidas");
         vTaskDelete(NULL);
         return;
     }
+    // Parametros, estado inicial y coherencia de la cota nominal.
     controlador_semaforos_t controlador;
     tiempos_semaforo_t tiempos = {CONFIG_SEMAFORO_VERDE_1_MS, CONFIG_SEMAFORO_VERDE_2_MS,
                                   CONFIG_SEMAFORO_AMARILLO_MS, CONFIG_SEMAFORO_ROJO_TOTAL_MS};
@@ -128,17 +137,19 @@ static void tarea_controlador(void *parametro)
     }
     ESP_LOGI(TAG, "Modo %s, inicio ambos rojos",
              controlador.adaptativo ? "ADAPTATIVO" : "CONVENCIONAL");
-    QueueHandle_t cola = xQueueCreate(1, sizeof(demanda_vehicular_t));
-    if (!cola) {
+    // Cola compartida de ultimo valor; la invalidacion tiene un canal local retenido.
+    QueueHandle_t cola_demanda = xQueueCreate(1, sizeof(demanda_vehicular_t));
+    if (!cola_demanda) {
         ESP_LOGE(TAG, "Fallo creando cola");
         semaforo_gpio_seguro(&gpio);
         vTaskDelete(NULL);
         return;
     }
 #ifdef CONFIG_SEMAFORO_CONECTADO
+    // Este modo inicia en seguro y crea las tareas de comunicacion STA/UDP.
     control_conectado_t guardia = {0};
     controlador.estado = ESTADO_SEGURO;
-    if (!receptor_udp_iniciar(cola) || !wifi_manager_iniciar()) {
+    if (!receptor_udp_iniciar(cola_demanda) || !wifi_manager_iniciar()) {
         ESP_LOGE(TAG, "Configuracion/red no disponible; mantener rojos hasta corregir y reiniciar");
         semaforo_gpio_seguro(&gpio);
         vTaskDelete(NULL);
@@ -147,20 +158,21 @@ static void tarea_controlador(void *parametro)
     ESP_LOGI(TAG, "Adaptativo CONECTADO: esperar observacion nueva valida en ambos rojos");
 #endif
 #ifdef CONFIG_SEMAFORO_SIMULAR_DEMANDA
-    if (xTaskCreate(tarea_simulacion, "demanda_simulada", 3072, cola, 3, NULL) != pdPASS) {
+    if (xTaskCreate(tarea_simulacion, "demanda_simulada", PILA_SIMULADOR_BYTES, cola_demanda,
+                    PRIORIDAD_SIMULADOR, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Fallo simulador");
         semaforo_gpio_seguro(&gpio);
-        vQueueDelete(cola);
+        vQueueDelete(cola_demanda);
         vTaskDelete(NULL);
         return;
     }
 #endif
-    uint64_t fin_verde[2] = {0};
-    bool tiene_fin[2] = {false, false};
+    uint64_t fin_verde_ms[2] = {0};
+    bool registro_fin_valido[2] = {false, false};
     for (;;) {
 #ifndef CONFIG_SEMAFORO_CONECTADO
         demanda_vehicular_t demanda;
-        if (xQueueReceive(cola, &demanda, 0) == pdPASS) {
+        if (xQueueReceive(cola_demanda, &demanda, 0) == pdPASS) {
             resultado_demanda_t resultado =
                 controlador_recibir_demanda(&controlador, demanda, ahora_ms());
             ESP_LOGI(TAG, "Demanda SIMULADA seq=%" PRIu64 " recepcion=%s", demanda.secuencia,
@@ -219,8 +231,8 @@ static void tarea_controlador(void *parametro)
             }
             if (informe.verde_aplicado && informe.interrumpido) {
                 unsigned carril = informe.estado_verde == VERDE_CARRIL_1 ? 0 : 1;
-                fin_verde[carril] = controlador.inicio_ms;
-                tiene_fin[carril] = true;
+                fin_verde_ms[carril] = controlador.inicio_ms;
+                registro_fin_valido[carril] = true;
             }
 #endif
             ESP_LOGI(TAG, "%s -> %s duracion real fase=%" PRIu64 " ms",
@@ -229,8 +241,8 @@ static void tarea_controlador(void *parametro)
             registrar_demanda(&controlador, aplicada);
             if (anterior == VERDE_CARRIL_1 || anterior == VERDE_CARRIL_2) {
                 int carril = anterior == VERDE_CARRIL_1 ? 0 : 1;
-                fin_verde[carril] = antes_gpio;
-                tiene_fin[carril] = true;
+                fin_verde_ms[carril] = antes_gpio;
+                registro_fin_valido[carril] = true;
             }
             if (controlador.estado == VERDE_CARRIL_1 || controlador.estado == VERDE_CARRIL_2) {
                 int carril = controlador.estado == VERDE_CARRIL_1 ? 0 : 1;
@@ -241,8 +253,8 @@ static void tarea_controlador(void *parametro)
                          : !controlador.demanda_aplicada_valida   ? "sin demanda vigente"
                          : controlador.decision.carril_favorecido ? "diferencia supera umbral"
                                                                   : "demanda equilibrada");
-                if (tiene_fin[carril]) {
-                    uint64_t intervalo = aplicada - fin_verde[carril];
+                if (registro_fin_valido[carril]) {
+                    uint64_t intervalo = aplicada - fin_verde_ms[carril];
                     ESP_LOGI(TAG, "Carril %d intervalo observado sin verde=%" PRIu64 " ms",
                              carril + 1, intervalo);
                     if (intervalo > CONFIG_SEMAFORO_OBJETIVO_SIN_VERDE_MS) {
@@ -258,14 +270,14 @@ static void tarea_controlador(void *parametro)
 #ifdef CONFIG_SEMAFORO_CONECTADO
         receptor_udp_estado_controlador((uint8_t)controlador.estado, guardia.generacion);
 #endif
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(PERIODO_CONTROL_MS));
     }
 }
 /* 7. Simulador: publica demanda; no controla salidas ni tiempos de fases. */
 #ifdef CONFIG_SEMAFORO_SIMULAR_DEMANDA
 static void tarea_simulacion(void *parametro)
 {
-    QueueHandle_t cola = (QueueHandle_t)parametro;
+    QueueHandle_t cola_demanda = (QueueHandle_t)parametro;
     uint64_t secuencia = 0;
     typedef struct {
         int32_t n1, n2;
@@ -298,7 +310,7 @@ static void tarea_simulacion(void *parametro)
                                  .valida = escenario->valida};
         ESP_LOGI("simulador", "SIMULADO: %s; pausa siguiente=%" PRIu32 " ms", escenario->nombre,
                  escenario->pausa_ms);
-        xQueueOverwrite(cola, &d);
+        xQueueOverwrite(cola_demanda, &d);
         vTaskDelay(pdMS_TO_TICKS(escenario->pausa_ms));
         indice = (indice + 1) % (sizeof escenarios / sizeof escenarios[0]);
     }
@@ -309,7 +321,8 @@ static void tarea_simulacion(void *parametro)
  * trasladarla aqui dividiria la responsabilidad de las salidas entre tareas. */
 void app_main(void)
 {
-    if (xTaskCreate(tarea_controlador, "controlador_semaforos", 5120, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(tarea_controlador, "controlador_semaforos", PILA_CONTROL_BYTES, NULL,
+                    PRIORIDAD_CONTROL, NULL) != pdPASS) {
         ESP_LOGE(TAG, "No se pudo crear propietario; GPIO sin inicializar");
     }
 }

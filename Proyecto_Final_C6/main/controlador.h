@@ -66,7 +66,7 @@ typedef struct {
 /* No toca GPIO. Una seguridad solicitada solo termina tras despeje completo.
  * El propietario reconoce generacion DESPUES de aplicar ambos rojos fisicos.
  */
-bool control_conectado_paso(control_conectado_t *guardia, controlador_semaforos_t *c,
+bool control_conectado_paso(control_conectado_t *guardia, controlador_semaforos_t *controlador,
                             estado_recepcion_t red, uint64_t ahora);
 /* Registrar alternancia solo cuando GPIO confirmo aplicar la fase. */
 void control_conectado_fase_aplicada(control_conectado_t *guardia, estado_semaforo_t estado);
@@ -86,5 +86,5 @@ typedef struct {
 } informe_aplicacion_t;
 /* Propietario unico, solo al cambiar de fase. Antes de verde se viene de rojo.
  * Comprobar antes y despues de GPIO sin bloquear red. */
-bool aplicacion_conectada(control_conectado_t *g, controlador_semaforos_t *c,
-                          operaciones_conectadas_t op, informe_aplicacion_t *informe);
+bool aplicacion_conectada(control_conectado_t *guardia, controlador_semaforos_t *controlador,
+                          operaciones_conectadas_t operaciones, informe_aplicacion_t *informe);
