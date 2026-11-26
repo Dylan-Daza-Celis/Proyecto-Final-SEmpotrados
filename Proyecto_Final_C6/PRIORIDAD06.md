@@ -10,7 +10,7 @@ conteos de YOLO: el algoritmo usa solo escenarios simulados o ausencia explícit
 
 ## Matemática y validación
 
-prioridad_vehicular.c/.h no dependen de GPIO ni FreeRTOS. Parámetros iniciales:
+La seccion de prioridad de controlador.c/h no dependen de GPIO ni FreeRTOS. Parámetros iniciales:
 verde mínimo 5000 ms, máximo 13000 ms, amarillo 2000 ms, rojo total 1000 ms,
 umbral 2, incremento por nivel 2000 ms y objetivo nominal sin verde 20000 ms.
 
@@ -48,7 +48,7 @@ amarillo o rojo para recuperar retrasos. Cada fase empieza tras aplicar GPIO.
 
 ## Vigencia y selección al entrar
 
-gestor_demanda.c/.h conserva el último mensaje y la última secuencia consumida.
+demanda.c/h conserva el último mensaje y la última secuencia consumida.
 Una secuencia nueva explícitamente inválida, con rangos erróneos, fecha futura o
 edad excesiva **invalida la demanda anterior**. Una duplicada/fuera de orden se
 ignora y no rehabilita datos. Una invalidación nueva también consume secuencia.
@@ -117,9 +117,9 @@ de compilación usan copias bajo .herramientas/ con dos directorios separados.
 ```
 
 Si no se permite ejecutar scripts, usar los comandos C99 equivalentes indicados
-en README, añadiendo main/prioridad_vehicular.c y main/gestor_demanda.c al enlace.
-El segundo ejecutable usa tests/pruebas_prioridad.c con esas dos fuentes y
-main/controlador_semaforos.c. Las pruebas compilan las mismas fuentes del firmware.
+en README; enlazar main/controlador.c y main/demanda.c una sola vez.
+El ejecutable de prioridad usa tests/pruebas_prioridad.c con esas dos fuentes.
+Las pruebas compilan las mismas fuentes del firmware.
 
 Se conservan las pruebas anteriores y se añaden simetría, umbral, saturación,
 extremos, configuraciones incompatibles, vigencia al usar, invalidación nueva,
