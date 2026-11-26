@@ -51,7 +51,8 @@ static esp_err_t capturar_imagen(httpd_req_t *peticion)
     esp_err_t resultado = camera_adquirir(&imagen, &identificador);
     if (resultado != ESP_OK) {
         ESP_LOGW(TAG, "Captura HTTP rechazada: %s", esp_err_to_name(resultado));
-        return responder_error(peticion, "503 Service Unavailable", "No se pudo adquirir un JPEG completo; vuelva a intentar.");
+        return responder_error(peticion, "503 Service Unavailable",
+                               "No se pudo adquirir un JPEG completo; vuelva a intentar.");
     }
     // La cámara y el buffer siguen protegidos hasta finalizar el envío síncrono.
     char numero[16];
@@ -74,21 +75,26 @@ static esp_err_t mostrar_estado(httpd_req_t *peticion)
 {
     camera_estado_t estado;
     if (camera_obtener_estado(&estado) != ESP_OK) {
-        return responder_error(peticion, "503 Service Unavailable", "Cámara ocupada; vuelva a intentar.");
+        return responder_error(peticion, "503 Service Unavailable",
+                               "Cámara ocupada; vuelva a intentar.");
     }
     char contenido[640];
-    const int longitud = snprintf(contenido, sizeof(contenido),
-        "{\"camera_ready\":%s,\"sensor\":\"%s\",\"pid\":%u,\"width\":%u,\"height\":%u,"
-        "\"format\":\"JPEG\",\"quality\":%d,\"captures\":%" PRIu32 ",\"capture_errors\":%" PRIu32 ","
-        "\"internal_free\":%zu,\"internal_minimum\":%zu,\"psram_free\":%zu,\"psram_largest\":%zu,\"uptime_ms\":%" PRId64 "}",
-        estado.inicializada ? "true" : "false", estado.modelo, estado.pid, estado.ancho, estado.alto,
-        estado.calidad, estado.capturas_correctas, estado.capturas_fallidas,
-        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-        heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-        heap_caps_get_free_size(MALLOC_CAP_SPIRAM), heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
-        esp_timer_get_time() / 1000);
+    const int longitud =
+        snprintf(contenido, sizeof(contenido),
+                 "{\"camera_ready\":%s,\"sensor\":\"%s\",\"pid\":%u,\"width\":%u,\"height\":%u,"
+                 "\"format\":\"JPEG\",\"quality\":%d,\"captures\":%" PRIu32
+                 ",\"capture_errors\":%" PRIu32 ","
+                 "\"internal_free\":%zu,\"internal_minimum\":%zu,\"psram_free\":%zu,\"psram_"
+                 "largest\":%zu,\"uptime_ms\":%" PRId64 "}",
+                 estado.inicializada ? "true" : "false", estado.modelo, estado.pid, estado.ancho,
+                 estado.alto, estado.calidad, estado.capturas_correctas, estado.capturas_fallidas,
+                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM), esp_timer_get_time() / 1000);
     if (longitud < 0 || (size_t)longitud >= sizeof(contenido)) {
-        return responder_error(peticion, "500 Internal Server Error", "No se pudo generar el estado.");
+        return responder_error(peticion, "500 Internal Server Error",
+                               "No se pudo generar el estado.");
     }
     sin_cache(peticion);
     httpd_resp_set_type(peticion, "application/json");
@@ -102,11 +108,13 @@ static esp_err_t controlar_camara(httpd_req_t *peticion)
     char tipo[64];
     if (httpd_req_get_hdr_value_str(peticion, "Content-Type", tipo, sizeof(tipo)) != ESP_OK ||
         strcmp(tipo, "application/x-www-form-urlencoded") != 0) {
-        return rechazar_cuerpo(peticion, "415 Unsupported Media Type", "Utilice application/x-www-form-urlencoded.");
+        return rechazar_cuerpo(peticion, "415 Unsupported Media Type",
+                               "Utilice application/x-www-form-urlencoded.");
     }
     char contenido[80];
     if (peticion->content_len == 0 || peticion->content_len >= sizeof(contenido)) {
-        return rechazar_cuerpo(peticion, "400 Bad Request", "Cuerpo de control vacío o demasiado grande.");
+        return rechazar_cuerpo(peticion, "400 Bad Request",
+                               "Cuerpo de control vacío o demasiado grande.");
     }
     size_t recibidos = 0;
     const int64_t limite = esp_timer_get_time() + 5000000;
@@ -115,10 +123,12 @@ static esp_err_t controlar_camara(httpd_req_t *peticion)
             httpd_resp_send_err(peticion, HTTPD_408_REQ_TIMEOUT, "Tiempo de recepción agotado.");
             return ESP_FAIL; // Cierra la conexión con cuerpo incompleto.
         }
-        const int leidos = httpd_req_recv(peticion, contenido + recibidos, peticion->content_len - recibidos);
+        const int leidos =
+            httpd_req_recv(peticion, contenido + recibidos, peticion->content_len - recibidos);
         if (leidos <= 0) {
             if (leidos == HTTPD_SOCK_ERR_TIMEOUT) {
-                httpd_resp_send_err(peticion, HTTPD_408_REQ_TIMEOUT, "Tiempo de recepción agotado.");
+                httpd_resp_send_err(peticion, HTTPD_408_REQ_TIMEOUT,
+                                    "Tiempo de recepción agotado.");
             }
             return ESP_FAIL;
         }
@@ -133,22 +143,34 @@ static esp_err_t controlar_camara(httpd_req_t *peticion)
     if (campos == 2) {
         sscanf(tipo, "%d", &calidad);
         char canonico[80];
-        consumidos = snprintf(canonico, sizeof(canonico), "resolution=%s&quality=%d", resolucion, calidad);
-        if (consumidos < 0 || (size_t)consumidos != recibidos || memcmp(canonico, contenido, recibidos) != 0) {
+        consumidos =
+            snprintf(canonico, sizeof(canonico), "resolution=%s&quality=%d", resolucion, calidad);
+        if (consumidos < 0 || (size_t)consumidos != recibidos ||
+            memcmp(canonico, contenido, recibidos) != 0) {
             calidad = 0;
         }
     }
     framesize_t tamano = FRAMESIZE_INVALID;
-    if (strcmp(resolucion, "QVGA") == 0) { tamano = FRAMESIZE_QVGA; }
-    if (strcmp(resolucion, "VGA") == 0) { tamano = FRAMESIZE_VGA; }
-    if (strcmp(resolucion, "SVGA") == 0) { tamano = FRAMESIZE_SVGA; }
+    if (strcmp(resolucion, "QVGA") == 0) {
+        tamano = FRAMESIZE_QVGA;
+    }
+    if (strcmp(resolucion, "VGA") == 0) {
+        tamano = FRAMESIZE_VGA;
+    }
+    if (strcmp(resolucion, "SVGA") == 0) {
+        tamano = FRAMESIZE_SVGA;
+    }
     if (campos != 2 || calidad < 10 || calidad > 40 || tamano == FRAMESIZE_INVALID) {
-        return responder_error(peticion, "400 Bad Request", "Use resolution=QVGA|VGA|SVGA&quality=10..40, en ese orden y sin campos adicionales.");
+        return responder_error(
+            peticion, "400 Bad Request",
+            "Use resolution=QVGA|VGA|SVGA&quality=10..40, en ese orden y sin campos adicionales.");
     }
     const esp_err_t resultado = camera_reconfigurar(tamano, calidad);
     if (resultado != ESP_OK) {
         ESP_LOGE(TAG, "Control de cámara falló: %s", esp_err_to_name(resultado));
-        return responder_error(peticion, "503 Service Unavailable", "No se pudo cambiar la configuración; consulte /status y el monitor serie.");
+        return responder_error(
+            peticion, "503 Service Unavailable",
+            "No se pudo cambiar la configuración; consulte /status y el monitor serie.");
     }
     return mostrar_estado(peticion);
 }
@@ -166,7 +188,9 @@ esp_err_t servidor_http_iniciar(void)
     configuracion.recv_wait_timeout = 5;
     configuracion.send_wait_timeout = 5;
     esp_err_t resultado = httpd_start(&servidor, &configuracion);
-    if (resultado != ESP_OK) { return resultado; }
+    if (resultado != ESP_OK) {
+        return resultado;
+    }
     const httpd_uri_t rutas[] = {
         {.uri = "/", .method = HTTP_GET, .handler = mostrar_inicio},
         {.uri = "/capture", .method = HTTP_GET, .handler = capturar_imagen},
@@ -186,7 +210,9 @@ esp_err_t servidor_http_iniciar(void)
 
 esp_err_t servidor_http_detener(void)
 {
-    if (servidor == NULL) { return ESP_OK; }
+    if (servidor == NULL) {
+        return ESP_OK;
+    }
     const esp_err_t resultado = httpd_stop(servidor);
     if (resultado == ESP_OK) {
         servidor = NULL;

@@ -43,7 +43,7 @@ static void eventos_red(void *parametro, esp_event_base_t base, int32_t identifi
         ip_event_got_ip_t *evento_ip = datos;
         receptor_udp_conexion(true);
         xEventGroupSetBits(eventos_wifi, BIT_WIFI_CONECTADO);
-        ESP_LOGI("wifi_c6", "IPv4 " IPSTR, IP2STR(&evento_ip->ip_info.evento_ip));
+        ESP_LOGI("wifi_c6", "IPv4 " IPSTR, IP2STR(&evento_ip->ip_info.ip));
     } else if ((base == WIFI_EVENT && identificador_evento == WIFI_EVENT_STA_DISCONNECTED) ||
                (base == IP_EVENT && identificador_evento == IP_EVENT_STA_LOST_IP)) {
         xEventGroupClearBits(eventos_wifi, BIT_WIFI_CONECTADO);
