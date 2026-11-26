@@ -32,8 +32,8 @@ static void manejar_evento(void *argumento, esp_event_base_t base, int32_t id, v
         if (evento->ip_info.ip.addr != 0) {
             xEventGroupClearBits(eventos_wifi, BIT_RECONECTAR);
             xEventGroupSetBits(eventos_wifi, BIT_CON_IP);
-            ESP_LOGI(TAG, "IPv4: " IPSTR " — abrir http://" IPSTR "/",
-                     IP2STR(&evento->ip_info.ip), IP2STR(&evento->ip_info.ip));
+            ESP_LOGI(TAG, "IPv4: " IPSTR " — abrir http://" IPSTR "/", IP2STR(&evento->ip_info.ip),
+                     IP2STR(&evento->ip_info.ip));
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) {
         xEventGroupClearBits(eventos_wifi, BIT_CON_IP);
@@ -51,8 +51,8 @@ static void tarea_reconexion(void *argumento)
     (void)argumento;
     uint32_t demora_ms = 1000;
     while (true) {
-        const EventBits_t eventos = xEventGroupWaitBits(eventos_wifi, BIT_RECONECTAR,
-                                                       pdTRUE, pdFALSE, pdMS_TO_TICKS(1000));
+        const EventBits_t eventos =
+            xEventGroupWaitBits(eventos_wifi, BIT_RECONECTAR, pdTRUE, pdFALSE, pdMS_TO_TICKS(1000));
         if ((eventos & BIT_CON_IP) != 0) {
             demora_ms = 1000;
             continue;
@@ -76,9 +76,9 @@ static void tarea_reconexion(void *argumento)
 
 bool wifi_esperar_ip(uint32_t espera_ms)
 {
-    return eventos_wifi != NULL &&
-           (xEventGroupWaitBits(eventos_wifi, BIT_CON_IP, pdFALSE, pdFALSE,
-                               pdMS_TO_TICKS(espera_ms)) & BIT_CON_IP) != 0;
+    return eventos_wifi != NULL && (xEventGroupWaitBits(eventos_wifi, BIT_CON_IP, pdFALSE, pdFALSE,
+                                                        pdMS_TO_TICKS(espera_ms)) &
+                                    BIT_CON_IP) != 0;
 }
 
 esp_err_t wifi_inicializar(void)
@@ -90,7 +90,8 @@ esp_err_t wifi_inicializar(void)
     const size_t largo_clave = strlen(CONFIG_PROYECTO_WIFI_PASSWORD);
     if (largo_ssid == 0 || largo_ssid > 32 || largo_clave > 63 ||
         (largo_clave != 0 && largo_clave < 8)) {
-        ESP_LOGE(TAG, "Configure SSID (1..32 bytes) y contraseña (8..63 o vacía para red abierta) en menuconfig.");
+        ESP_LOGE(TAG, "Configure SSID (1..32 bytes) y contraseña (8..63 o vacía para red abierta) "
+                      "en menuconfig.");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -130,30 +131,44 @@ esp_err_t wifi_inicializar(void)
     }
     wifi_init_config_t inicial = WIFI_INIT_CONFIG_DEFAULT();
     resultado = esp_wifi_init(&inicial);
-    if (resultado != ESP_OK) { goto fallo; }
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     controlador_creado = true;
-    resultado = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                   manejar_evento, NULL, &manejador_wifi);
-    if (resultado != ESP_OK) { goto fallo; }
+    resultado = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, manejar_evento,
+                                                    NULL, &manejador_wifi);
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     registro_wifi = true;
-    resultado = esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID,
-                                                   manejar_evento, NULL, &manejador_ip);
-    if (resultado != ESP_OK) { goto fallo; }
+    resultado = esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, manejar_evento,
+                                                    NULL, &manejador_ip);
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     registro_ip = true;
     // Las credenciales se mantienen en RAM; no se persisten mediante esp_wifi.
     resultado = esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    if (resultado != ESP_OK) { goto fallo; }
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     wifi_config_t configuracion = {0};
     memcpy(configuracion.sta.ssid, CONFIG_PROYECTO_WIFI_SSID, largo_ssid);
     memcpy(configuracion.sta.password, CONFIG_PROYECTO_WIFI_PASSWORD, largo_clave);
     configuracion.sta.threshold.authmode = largo_clave == 0 ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
     configuracion.sta.pmf_cfg.capable = true;
     resultado = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (resultado != ESP_OK) { goto fallo; }
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     resultado = esp_wifi_set_config(WIFI_IF_STA, &configuracion);
-    if (resultado != ESP_OK) { goto fallo; }
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     resultado = esp_wifi_start();
-    if (resultado != ESP_OK) { goto fallo; }
+    if (resultado != ESP_OK) {
+        goto fallo;
+    }
     if (xTaskCreate(tarea_reconexion, "wifi_reconexion", 4096, NULL, 4, NULL) != pdPASS) {
         resultado = ESP_ERR_NO_MEM;
         goto fallo;

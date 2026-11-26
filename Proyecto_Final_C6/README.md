@@ -1,6 +1,8 @@
-# ESP32-C6: hardware, FreeRTOS y semaforos
+# ESP32-C6: estructura didactica, FreeRTOS y semaforos
 
-ESP-IDF nativo v6.0.2, C, targetesp32c6. Tres modos Kconfig: convencional,
+ESP-IDF nativo v6.0.2, C, targetesp32c6.
+Tarea08 consolida el firmware en seis C y cuatro cabeceras, sin cambiar el
+comportamiento de fe35f06. [Guia de estudio y defensa](../GUIA_ESTUDIO.md). Tres modos Kconfig: convencional,
 adaptativo simulado y adaptativo conectado. [Configurar UDP ASCII](PROTOCOLO_UDP07.md).
 El modo conectado recibe conteos del PC; nunca solicita ni confirma paquetes.
 
@@ -20,7 +22,7 @@ Cada GPIO → resistencia individual de **330 Ω** → ánodo LED; cátodo a GND
 LED activo alto. No compartir una sola resistencia para varios LEDs. Confirmar
 tensión, polaridad y límites de corriente del chip/placa antes de energizar.
 
-Todos los pines están en main/semaforo_pinout.h. El validador usa la macro oficial
+Todos los pines están en main/semaforo_gpio.h. El validador usa la macro oficial
 GPIO_IS_VALID_OUTPUT_GPIO y rechaza duplicados, arranque 4/5/8/9/15, USB 12/13,
 UART 16/17 y flash 24..30. Esto no prueba disponibilidad en la placa: variantes
 con flash SiP pueden **no exponer GPIO10/11**, y las conexiones internas del módulo
@@ -29,12 +31,18 @@ el encabezado; no sustituirlas por un pin reservado para conservar el ejemplo.
 
 ## Arquitectura
 
-- controlador_semaforos.c: lógica pura con tiempos monotónicos en ms; no usa GPIO.
-- semaforo_gpio.c: única aplicación de luces, validación e intentos de estado seguro.
-- semaforo_gpio_idf.c: adaptador al driver GPIO oficial; operaciones sustituibles en pruebas.
-- main.c: tarea propietaria; ninguna otra tarea/interrupción escribe GPIO.
-- demanda_vehicular.h: N1/N2, secuencia uint64, validez y recepción local.
-- simulador_demanda.c: tarea opcional que escribe en una cola de longitud uno.
+- main.c: constantes, auxiliares, tarea propietaria, simulador opcional y app_main.
+- controlador.c/h: parametros, prioridad, estados, tiempos, seguro, recuperacion y
+  aplicacion mediante operaciones inyectadas para pruebas sin hardware.
+- demanda.c/h: estructuras, validacion ASCII, secuencias, duplicados, vigencia e invalidacion.
+- comunicacion.c/h: STA, eventos/reconexion, estado sincronizado y receptor UDP.
+- semaforo_gpio.c/h: pinout, validacion, precarga, exclusividad y aplicacion de luces.
+- semaforo_gpio_idf.c: adaptador gpio_config/gpio_set_level con APIs oficiales.
+
+Los tipos compartidos no introducen ciclos de cabeceras. La logica pura se
+compila anfitriona sin FreeRTOS/SDK. Los traslados y dependencias conservadas
+estan documentados en la guia de estudio. El siguiente ciclo muestra los
+valores iniciales convencionales; en adaptativo cambia solo la duracion verde.
 
 ```mermaid
 stateDiagram-v2
@@ -79,10 +87,10 @@ watchdog ni brownout. Esto es una maqueta educativa, con verificación física p
 
 ## Demanda y prioridad
 
-La cola FreeRTOS conserva un solo valor. En conectado, receptor_udp.c recibe y
-valida; demanda_conectada.c conserva secuencia, timeout local e invalidacion
-retenida. control_conectado.c dirige el despeje y rearme; aplicacion_conectada.c
-comprueba vigencia/generacion antes y despues de escribir GPIO. Estas tareas
+La cola FreeRTOS conserva un solo valor. En conectado, comunicacion.c recibe y
+valida; demanda.c conserva secuencia, timeout local e invalidacion retenida.
+controlador.c dirige despeje, rearme y comprobacion de vigencia/generacion antes
+y despues de escribir GPIO. Estas tareas
 no comparten escrituras GPIO: solo main.c, el propietario, usa el driver.
 
 D=N1-N2, umbral2, incremento2000ms, verdes5000..13000ms, amarillo2000ms y

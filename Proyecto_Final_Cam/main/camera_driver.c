@@ -1,5 +1,4 @@
 #include "camera_driver.h"
-#include "camera_pinout.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -10,6 +9,27 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+
+/* Pinout privado del controlador: no se usa fuera de esta unidad. */
+// Pinout inicial AI Thinker: verificar contra la placa adquirida.
+// La placa del usuario detectó OV3660 usando estas conexiones por SCCB.
+// RESET=-1 solicita reinicio por software; GPIO0 se usa como XCLK al ejecutar.
+#define CAMERA_PIN_PWDN 32
+#define CAMERA_PIN_RESET -1
+#define CAMERA_PIN_XCLK 0
+#define CAMERA_PIN_SIOD 26
+#define CAMERA_PIN_SIOC 27
+#define CAMERA_PIN_D0 5
+#define CAMERA_PIN_D1 18
+#define CAMERA_PIN_D2 19
+#define CAMERA_PIN_D3 21
+#define CAMERA_PIN_D4 36
+#define CAMERA_PIN_D5 39
+#define CAMERA_PIN_D6 34
+#define CAMERA_PIN_D7 35
+#define CAMERA_PIN_VSYNC 25
+#define CAMERA_PIN_HREF 23
+#define CAMERA_PIN_PCLK 22
 
 static const char *TAG = "camera_driver";
 static bool camara_inicializada;
@@ -22,16 +42,14 @@ static uint16_t pid_sensor;
 
 static bool tomar_mutex(void)
 {
-    return mutex_camara != NULL &&
-           xSemaphoreTake(mutex_camara, pdMS_TO_TICKS(1000)) == pdTRUE;
+    return mutex_camara != NULL && xSemaphoreTake(mutex_camara, pdMS_TO_TICKS(1000)) == pdTRUE;
 }
 
 static bool imagen_valida(const camera_fb_t *imagen)
 {
     const resolution_info_t *tamano = &resolution[configuracion_actual.frame_size];
-    return imagen->buf != NULL && imagen->len >= 4 &&
-           imagen->format == PIXFORMAT_JPEG && imagen->width == tamano->width &&
-           imagen->height == tamano->height &&
+    return imagen->buf != NULL && imagen->len >= 4 && imagen->format == PIXFORMAT_JPEG &&
+           imagen->width == tamano->width && imagen->height == tamano->height &&
            imagen->buf[0] == 0xff && imagen->buf[1] == 0xd8 &&
            imagen->buf[imagen->len - 2] == 0xff && imagen->buf[imagen->len - 1] == 0xd9;
 }
@@ -44,8 +62,8 @@ static void estabilizar_sensor(void)
     for (int intento = 0; intento < 2; ++intento) {
         camera_fb_t *imagen = esp_camera_fb_get();
         if (imagen != NULL) {
-            ESP_LOGI(TAG, "Estabilización %d/2: framebuffer descartado (%zu bytes).",
-                     intento + 1, imagen->len);
+            ESP_LOGI(TAG, "Estabilización %d/2: framebuffer descartado (%zu bytes).", intento + 1,
+                     imagen->len);
             esp_camera_fb_return(imagen);
         } else {
             ESP_LOGW(TAG, "Estabilización %d/2: sin framebuffer.", intento + 1);
@@ -59,8 +77,8 @@ static esp_err_t iniciar_controlador(const camera_config_t *configuracion)
 {
     esp_err_t resultado = esp_camera_init(configuracion);
     if (resultado != ESP_OK) {
-        ESP_LOGE(TAG, "esp_camera_init falló: %s (0x%x)",
-                 esp_err_to_name(resultado), (unsigned int)resultado);
+        ESP_LOGE(TAG, "esp_camera_init falló: %s (0x%x)", esp_err_to_name(resultado),
+                 (unsigned int)resultado);
         return resultado;
     }
     const sensor_t *sensor = esp_camera_sensor_get();
@@ -78,9 +96,11 @@ static esp_err_t iniciar_controlador(const camera_config_t *configuracion)
     modelo_sensor = pid_sensor == OV3660_PID ? "OV3660" : "OV2640";
     camara_inicializada = true;
     estabilizar_sensor();
-    ESP_LOGI(TAG, "%s inicializada (PID=0x%x): JPEG %dx%d, calidad=%d, XCLK=20 MHz, 1 framebuffer en PSRAM.",
-             modelo_sensor, pid_sensor, resolution[configuracion->frame_size].width,
-             resolution[configuracion->frame_size].height, configuracion->jpeg_quality);
+    ESP_LOGI(
+        TAG,
+        "%s inicializada (PID=0x%x): JPEG %dx%d, calidad=%d, XCLK=20 MHz, 1 framebuffer en PSRAM.",
+        modelo_sensor, pid_sensor, resolution[configuracion->frame_size].width,
+        resolution[configuracion->frame_size].height, configuracion->jpeg_quality);
     return ESP_OK;
 }
 
@@ -185,8 +205,8 @@ esp_err_t camera_adquirir(camera_fb_t **imagen, uint32_t *identificador)
     }
     *imagen = nueva;
     *identificador = ++imagenes_capturadas;
-    ESP_LOGI(TAG, "Imagen #%" PRIu32 ": %zux%zu, formato=JPEG, tamaño=%zu bytes",
-             *identificador, nueva->width, nueva->height, nueva->len);
+    ESP_LOGI(TAG, "Imagen #%" PRIu32 ": %zux%zu, formato=JPEG, tamaño=%zu bytes", *identificador,
+             nueva->width, nueva->height, nueva->len);
     return ESP_OK;
 }
 
@@ -215,7 +235,7 @@ esp_err_t camera_obtener_estado(camera_estado_t *estado)
     if (!tomar_mutex()) {
         return ESP_ERR_TIMEOUT;
     }
-    *estado = (camera_estado_t) {
+    *estado = (camera_estado_t){
         .inicializada = camara_inicializada,
         .modelo = modelo_sensor,
         .pid = pid_sensor,
@@ -232,7 +252,8 @@ esp_err_t camera_obtener_estado(camera_estado_t *estado)
 esp_err_t camera_reconfigurar(framesize_t resolucion, int calidad)
 {
     if ((resolucion != FRAMESIZE_QVGA && resolucion != FRAMESIZE_VGA &&
-         resolucion != FRAMESIZE_SVGA) || calidad < 10 || calidad > 40) {
+         resolucion != FRAMESIZE_SVGA) ||
+        calidad < 10 || calidad > 40) {
         return ESP_ERR_INVALID_ARG;
     }
     if (!tomar_mutex()) {
@@ -254,7 +275,8 @@ esp_err_t camera_reconfigurar(framesize_t resolucion, int calidad)
             ESP_LOGE(TAG, "Reconfiguración fallida; restaurando configuración anterior.");
             const esp_err_t restauracion = iniciar_controlador(&anterior);
             if (restauracion != ESP_OK) {
-                ESP_LOGE(TAG, "Restauración fallida: %s; cámara detenida.", esp_err_to_name(restauracion));
+                ESP_LOGE(TAG, "Restauración fallida: %s; cámara detenida.",
+                         esp_err_to_name(restauracion));
             }
         }
     }

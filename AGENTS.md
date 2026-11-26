@@ -1,19 +1,28 @@
-# Sistemas Empotrados ? instrucciones permanentes
+# Sistemas Empotrados — instrucciones permanentes
 
 ## Proyecto y alcance actual
 
-Maqueta universitaria de45 ?44cm, interseccion en Y: dos entradas y una salida.
+Maqueta universitaria de 45 × 44 cm, interseccion en Y: dos entradas y una salida.
 ROI1 espera izquierda y ROI2 espera derecha; excluir convergencia y salida.
-Cada vehiculo tiene el mismo peso. Cada LED lleva resistencia individual330?.
+Cada vehiculo tiene el mismo peso. Cada LED lleva resistencia individual de 330 ohmios.
 
 - ESP32-CAM: captura JPEG por HTTP, targetesp32. OV2640/OV3660 soportados;
   el usuario detecto OV3660 PID0x3660. Conservar PSRAM, flash4MiB, brownout y
-  particion oficial SINGLE_APP_LARGE. No modificar Proyecto_Final_Cam en07.2.
+  particion oficial SINGLE_APP_LARGE. Tarea08 autoriza reorganizar CAM sin alterar
+  captura, HTTP ni configuraciones. El pinout privado vive en camera_driver.c.
 - PC: un trabajador de adquisicion HTTP, uno de YOLO y un emisor UDP opcional.
 - C6: Wi-Fi STA, receptor UDP, prioridad y una tarea propietaria de los seis GPIO.
   Ni PC ni receptor UDP controlan directamente LEDs.
-- Rama feat/integration-udp-07, actualizar PR8. No modificar master ni fusionar
-  PR anteriores. El commit ebe261a conserva la implementacion anterior en Git.
+- Tarea08: rama refactor/estructura-didactica-espidf desde fe35f06, PR contra
+  feat/integration-udp-07. No modificar master ni fusionar PR anteriores.
+  Separar commits de reorganizacion, limpieza y documentacion. Mantener facil
+  retorno a la referencia. No incluir archivos .c mediante #include.
+
+Estructura C6: main.c; controlador.c/h; demanda.c/h; comunicacion.c/h;
+semaforo_gpio.c/h y semaforo_gpio_idf.c. Pines en semaforo_gpio.h. Conservar
+logica pura y operaciones GPIO inyectables para tests. No redisenar protocolos,
+prioridad, tiempos ni pines. Estilo .clang-format, nombres descriptivos, una
+instruccion por linea y secciones visibles en main. Guia real en GUIA_ESTUDIO.md.
 
 ## Firmware y hardware
 
@@ -88,8 +97,11 @@ pesos ni managed_components. Conservar dependencies.lock del gestor oficial.
 
 Ejecutar pruebas Python vigentes, C de estados/GPIO/prioridad/UDP y loopback.
 Retirar solo pruebas exclusivas del protocolo eliminado, explicando su reemplazo.
-Compilar los tres modos con configuraciones de validacion aisladas y targetesp32c6;
+Compilar CAM/esp32 y los tres modos C6/esp32c6 con configuraciones aisladas;
 ejecutar pip check y git diff --check. Reportar evidencia y pendientes fisicos.
 Comandos de usuario: idf.py --version/menuconfig/build y
 idf.py -p COMx -b115200 flash; idf.py -p COMx monitor (puerto real).
-Guias: Proyecto_Final_C6/README.md y PROTOCOLO_UDP07.md, Vision_Artificial/README.md.
+Conservar las 90 pruebas Python, cuatro grupos C y cinco tests web. Adaptar solo
+includes/enlace a los traslados; no eliminar aserciones para hacer pasar la reforma.
+Guias: GUIA_ESTUDIO.md, Proyecto_Final_C6/README.md y PROTOCOLO_UDP07.md,
+Vision_Artificial/README.md. Registrar linea base y comparacion antes/despues.

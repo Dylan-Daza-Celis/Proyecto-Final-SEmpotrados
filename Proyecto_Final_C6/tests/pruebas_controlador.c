@@ -2,10 +2,9 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "controlador_semaforos.h"
+#include "controlador.h"
 #include "semaforo_gpio.h"
-#include "semaforo_pinout.h"
-#include "demanda_vehicular.h"
+#include "demanda.h"
 
 static int niveles[24], llamadas, fallar_en, habilitado, habilitar_falla;
 static bool valida(int pin) { return pin>=0 && pin<24; }

@@ -1,5 +1,8 @@
 # UDP sencillo PC -> ESP32-C6 ? tarea07.2
 
+Tarea08 conserva este protocolo y reorganiza su implementacion en
+comunicacion.c/h y demanda.c/h. [Recorrido academico](../GUIA_ESTUDIO.md).
+
 La CAM conserva su servidor HTTP. El PC realiza YOLO11x y conteo por ROI; C6
 recibe conteos y ejecuta prioridad, maquina de estados y GPIO con FreeRTOS.
 

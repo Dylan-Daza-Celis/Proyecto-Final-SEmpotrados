@@ -1,4 +1,13 @@
-# Semaforo inteligente ? Sistemas Empotrados
+# Semáforo inteligente — Sistemas Empotrados
+
+**Tarea 08:** firmware reorganizado para estudiar y defender el proyecto.
+Leer [GUIA_ESTUDIO.md](GUIA_ESTUDIO.md): recorrido de funciones, FreeRTOS,
+hardware, algoritmo, preguntas del profesor y mapa de archivos trasladados.
+C6 pasa de 12 C + 12 H a **6 C + 4 H**, conservando la lógica de `fe35f06`.
+La rama de revisión es `refactor/estructura-didactica-espidf`, basada en
+`feat/integration-udp-07`; los proyectos CAM y C6 siguen independientes.
+Regresión: 90 tests Python, cuatro grupos C y cinco tests web correctos;
+CAM y los tres modos C6 compilados con ESP-IDF v6.0.2. Sin prueba física nueva.
 
 Maqueta de45 ?44cm con dos entradas que convergen en una salida. Cada carril
 usa LEDs rojo, amarillo y verde con resistencias individuales de330?.

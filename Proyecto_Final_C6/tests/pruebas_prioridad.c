@@ -1,9 +1,8 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
-#include "prioridad_vehicular.h"
-#include "gestor_demanda.h"
-#include "controlador_semaforos.h"
+#include "controlador.h"
+#include "demanda.h"
 
 static void probar_matematica(void)
 {

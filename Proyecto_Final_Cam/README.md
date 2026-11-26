@@ -1,5 +1,9 @@
 # Tarea 02 — Wi-Fi y fotografías por HTTP
 
+Tarea 08 reorganiza comentarios de `main.c` e integra el pinout privado en
+`camera_driver.c`, conservando cámara, Wi-Fi, servidor HTTP y sus interfaces.
+[Guía de estudio y recorrido del firmware](../GUIA_ESTUDIO.md).
+
 Prácticas **1.2 y 1.3** sobre el controlador de cámara de 1.1. La ESP32-CAM sirve
 una interfaz local para capturar, ver y descargar JPEG. La C6, la red neuronal,
 OpenCV y el intercambio UDP de conteos siguen pendientes.
@@ -25,7 +29,7 @@ a 40 MHz; brownout permanece habilitado.
 
 ### Pinout AI Thinker
 
-Definido en `main/camera_pinout.h`. La detección previa funciona con estas
+Definido de forma privada en `main/camera_driver.c`. La detección previa funciona con estas
 conexiones; la comprobación visual también verificará el bus de datos.
 
 | Señal | GPIO | Señal | GPIO |
