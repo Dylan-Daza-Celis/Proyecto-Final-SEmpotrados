@@ -2,8 +2,8 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
-#include "demanda_conectada.h"
-#include "control_conectado.h"
+#include "demanda.h"
+#include "controlador.h"
 static mensaje_conteos_t mensaje(uint64_t seq,bool valido)
 { return (mensaje_conteos_t){seq,3,1,valido}; }
 static void iniciar(gestor_recepcion_t *r)

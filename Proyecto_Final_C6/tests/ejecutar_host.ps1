@@ -4,7 +4,7 @@ $raizPrueba=Split-Path $PSScriptRoot -Parent
 $salidaPrueba=Join-Path $PSScriptRoot 'salida'
 New-Item -ItemType Directory -Force -Path $salidaPrueba | Out-Null
 $basePrueba=@('-std=c99','-Wall','-Werror',('-I'+(Join-Path $raizPrueba 'main').Replace('\','/')))
-$nucleoPrueba=@('controlador_semaforos.c','prioridad_vehicular.c','gestor_demanda.c') |
+$nucleoPrueba=@('controlador.c','demanda.c') |
     ForEach-Object { (Join-Path $raizPrueba "main/$_").Replace('\','/') }
 function Ejecutar-Prueba([string]$Nombre,[string[]]$Extras) {
     $fuentesPrueba=@($nucleoPrueba)+@($Extras | ForEach-Object { (Join-Path $raizPrueba "main/$_").Replace('\','/') })
@@ -21,5 +21,5 @@ function Ejecutar-Prueba([string]$Nombre,[string[]]$Extras) {
 }
 Ejecutar-Prueba 'pruebas_controlador' @('semaforo_gpio.c')
 Ejecutar-Prueba 'pruebas_prioridad' @()
-Ejecutar-Prueba 'pruebas_udp' @('demanda_conectada.c','control_conectado.c')
-Ejecutar-Prueba 'pruebas_gpio_conectado' @('demanda_conectada.c','control_conectado.c','aplicacion_conectada.c','semaforo_gpio.c')
+Ejecutar-Prueba 'pruebas_udp' @()
+Ejecutar-Prueba 'pruebas_gpio_conectado' @('semaforo_gpio.c')

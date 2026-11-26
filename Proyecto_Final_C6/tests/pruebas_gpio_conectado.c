@@ -2,9 +2,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "aplicacion_conectada.h"
+#include "controlador.h"
 #include "semaforo_gpio.h"
-#include "semaforo_pinout.h"
 static gestor_recepcion_t r;
 static semaforo_gpio_t gpio;
 static uint64_t ahora;
