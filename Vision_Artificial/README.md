@@ -1,15 +1,17 @@
-# Tarea 04 — YOLO11x y ocupación vehicular por ROI
+# Vision artificial — YOLO11x y ocupacion vehicular por ROI
 
-Tarea07: servicio UDP opcional en trabajador separado, activado con
-`--udp-config udp.local.json`. Reutiliza resultados existentes, sin otra
-inferencia. HMAC, asociacion, invalidacion retenida y edades desde `/capture`;
-no transmite una imagen pausada como medicion valida. El panel distingue
-servicio iniciado, asociacion reciente y estado C6 reportado. Ver
-[configuracion y pruebas completas](../Proyecto_Final_C6/PROTOCOLO_UDP07.md).
-Confianza operativa definitiva **0.15**, YOLO11x original CPU/PyTorch FP32,
-SVGA800x600/imgsz960/IoU0.45/NMSfalse, clases2/3/5/7, tres calentamientos y
-mediana desactivada. `config.json` local se conserva. Antes de editar ROI se
-exige una referencia reciente de la epoca actual; Enter y G revalidan contexto.
+Tarea07.2: emisor UDP opcional PC -> C6, formato `secuencia,N1,N2,valido`.
+Usa el resultado existente, sin otro modelo ni inferencias duplicadas.
+[Configuracion sencilla y pruebas](../Proyecto_Final_C6/PROTOCOLO_UDP07.md).
+UDP se activa con `--udp-config udp.emisor.local.json` (activo/IPdestino/puerto).
+
+YOLO11x sigue reconociendo con ROI pendientes: muestra cajas, confianza y total.
+Los conteos por carril y el envio valido requieren ambas ROI confirmadas y
+guardadas. La ventana distingue reconocimiento, calibracion y conteo operativo.
+Se conservan controles, invalidacion persistente y referencias Enter/G.
+Perfil operativo: YOLO11x original/CPU/PyTorch FP32, SVGA800x600/imgsz960,
+confianza0.15/IoU0.45/NMSfalse/clases2,3,5,7, tres calentamientos y hilos de referencia.
+No se sobrescribe config.json ni se requiere archivo de autenticacion.
 
 Revisión para tarea 07: guardado G revalidado, centros flotantes compartidos entre
 contador/diagnóstico y escenas finales excluidas del barrido. 76 pruebas correctas.
@@ -27,7 +29,7 @@ automatizadas. S admite referencias históricas pausadas, sin habilitar control.
 
 Aplicación Windows/Python que conserva cliente HTTP, visualizador, calibración y
 guardado de originales de la tarea 03. Añade YOLO11x preentrenado y conteo de
-**ocupación en cada fotografía**, sin tracking, entrenamiento ni UDP.
+**ocupación en cada fotografía**, sin tracking ni entrenamiento. UDP es opcional con emisor_udp.py.
 Los firmware de cámara y C6 permanecen sin cambios.
 
 ## Entorno y modelo elegido

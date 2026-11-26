@@ -44,7 +44,7 @@ class PruebasDiagnostico06(unittest.TestCase):
         adquisidor.obtener_estado.return_value=replace(estado,captura=vieja,secuencia=2)
         gui.tecla(ord('2')); self.assertIsNone(gui.activa)
         nueva=replace(captura_svga(3),iniciada_monotonic=gui.invalidada_desde+.01,recibida_monotonic=gui.invalidada_desde+.01)
-        adquisidor.obtener_estado.return_value=replace(estado,captura=nueva,secuencia=3,confirmada_monotonic=time.monotonic())
+        adquisidor.obtener_estado.return_value=replace(estado,captura=nueva,secuencia=3,confirmada_monotonic=gui.invalidada_desde)
         with patch('main.time.monotonic',return_value=gui.invalidada_desde+.02): gui.tecla(ord('1'))
         self.assertEqual(gui.activa,1)
         self.assertIs(gui.captura,nueva)

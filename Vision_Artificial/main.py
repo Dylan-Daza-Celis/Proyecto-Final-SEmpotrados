@@ -16,7 +16,7 @@ from camera_client import Adquisidor, normalizar_url, captura_vigente
 from dataset_manager import GestorDataset, guardar_diagnostico
 from roi_manager import GestorROI
 from detector_vehiculos import validar_parametros
-from inference_worker import TrabajadorInferencia, motivo_entrada, motivo_resultado
+from inference_worker import TrabajadorInferencia, motivo_deteccion, motivo_diagnostico, motivo_resultado
 
 RAIZ = Path(__file__).resolve().parent
 VENTANA = "Semaforo inteligente - calibracion"
@@ -239,8 +239,7 @@ class Visualizador:
 
     @sincronizado
     def snapshot_udp(self):
-        from servidor_udp import Snapshot
-        from protocolo_udp import SIN_DATOS,CAMARA,INFERENCIA,PAUSA,CONTEXTO,EDAD
+        from emisor_udp import Snapshot
         estado=self.adquisidor.obtener_estado()
         ia=self.trabajador.obtener_estado() if self.trabajador else None
         contexto=(estado.epoca,self.regiones.firma(),self.pausa,self.deteccion_activa,
@@ -249,12 +248,9 @@ class Visualizador:
         motivo=motivo_resultado(estado,estado.captura,self.regiones,ia,self.limite_imagen,
                                self.limite_resultado,self.pausa,self.deteccion_activa)
         if motivo:
-            codigo=(PAUSA if self.pausa else CAMARA if not estado.conectado or estado.error_captura else
-                    INFERENCIA if ia.error else EDAD if 'antigu' in motivo else CONTEXTO if 'ROI' in motivo else SIN_DATOS)
-            return Snapshot(motivo=codigo,contexto=contexto,epoca=estado.epoca)
+            return Snapshot(motivo=motivo,contexto=contexto)
         r=ia.resultado
-        return Snapshot(True,0,contexto,r.secuencia,estado.epoca,r.captura.origen_monotonic,
-                        r.instantaneo.n1,r.instantaneo.n2,
+        return Snapshot(True,'',contexto,(estado.epoca,r.secuencia),r.instantaneo.n1,r.instantaneo.n2,
                         min(estado.captura.origen_monotonic+self.limite_imagen,
                             estado.confirmada_monotonic+self.limite_imagen,r.captura.origen_monotonic+self.limite_resultado))
 
@@ -267,13 +263,15 @@ class Visualizador:
             self.ultima_secuencia_roi = estado.secuencia
         estado_ia = None
         motivo = "Deteccion desactivada"
+        diagnostico=motivo
         if self.trabajador:
-            entrada = motivo_entrada(estado, estado.captura, self.regiones, self.limite_imagen, self.pausa, self.deteccion_activa)
+            entrada = motivo_deteccion(estado, estado.captura, self.limite_imagen, self.pausa, self.deteccion_activa)
             if entrada:
                 self.trabajador.suspender(entrada)
             else:
                 self.trabajador.enviar(estado.captura, estado.secuencia, self.regiones, estado.epoca)
             estado_ia = self.trabajador.obtener_estado()
+            diagnostico=motivo_diagnostico(estado,estado.captura,estado_ia,self.limite_imagen,self.limite_resultado,self.pausa,self.deteccion_activa)
             motivo = motivo_resultado(estado, estado.captura, self.regiones, estado_ia,
                                       self.limite_imagen, self.limite_resultado, self.pausa, self.deteccion_activa)
         nueva = False
@@ -320,13 +318,20 @@ class Visualizador:
         referencia = self.regiones.resolucion_referencia
         if self.captura is not None and referencia and referencia != (imagen.shape[1], imagen.shape[0]):
             lineas.append("Resolucion distinta: verificar encuadre; recalibrar si cambia campo visual.")
-        lineas.append("CONTEO: " + (motivo if motivo else "VALIDO - ocupacion instantanea"))
+        calibracion=self.regiones.estado_calibracion((800,600))
+        lineas.append("CALIBRACION: " + (calibracion or "ambas ROI validas"))
+        lineas.append("YOLO11x: " + (diagnostico or "reconocimiento vigente"))
+        lineas.append("CONTEO OPERATIVO: " + (motivo or "VALIDO"))
         if resultado is not None:
-            c = resultado.instantaneo
-            f = resultado.filtrado
-            lineas.append(f"{'Referencia NO valida' if motivo else 'Instantaneo'}: N1={c.n1} N2={c.n2} fuera={c.n_fuera} total={c.n_total} D={c.diferencia}")
-            lineas.append(f"{'Filtro de referencia NO valido' if motivo else 'Filtrado'}: N1={f.n1} N2={f.n2} fuera={f.n_fuera} D={f.diferencia} | muestras={0 if motivo else resultado.muestras_validas}")
-            lineas.append(f"Inferencia {resultado.inferencia_s:.2f} s | latencia total {resultado.latencia_total_s:.2f} s | edad {time.monotonic()-resultado.captura.origen_monotonic:.1f} s")
+            lineas.append(f"Detecciones totales: {len(resultado.detecciones)} | Inferencia {resultado.inferencia_s:.2f} s | latencia {resultado.latencia_total_s:.2f} s")
+            if not motivo and resultado.instantaneo is not None:
+                c=resultado.instantaneo
+                lineas.append(f"N1={c.n1} N2={c.n2} fuera={c.n_fuera} total={c.n_total} D={c.diferencia}")
+                if self.configuracion.get('filtro_mediana',False) and resultado.filtrado is not None:
+                    f=resultado.filtrado
+                    lineas.append(f"Filtro N1={f.n1} N2={f.n2} muestras={resultado.muestras_validas}")
+            else:
+                lineas.append("Carriles N1/N2: NO DISPONIBLES; no se envia demanda valida")
         if estado_ia:
             modelo_nombre = Path(self.configuracion.get("detector", {}).get("pesos", "yolo11x.pt")).name
             lineas.append(f"{self.configuracion.get('detector', {}).get('backend', 'pytorch')} {modelo_nombre} | {estado_ia.frecuencia_hz:.2f} Hz deteccion | omitidos={estado_ia.omitidos} | procesando={estado_ia.procesando}")
@@ -340,9 +345,10 @@ class Visualizador:
         lineas.extend([self.mensaje, "S guardar | 1/2 ROI | Enter confirmar | R borrar | G guardar ROI | Espacio pausa | Q salir"])
         if self.servicio_udp:
             red=self.servicio_udp.obtener_estado()
-            lineas.extend([f"UDP {'activo' if red['activo'] else 'detenido'} {red['direccion']} | asociado={red['asociado']} sesion={red['sesion']}",
-                f"UDP solicitudes={red['solicitudes']} respuestas={red['respuestas']} rechazados={red['rechazados']} RTT informado={red['rtt_ms']}",
-                f"C6 estado informado={red['estado_c6']} (7=seguro) | invalidacion={red['ultima_invalidacion']} {red['error']}"])
+            lineas.extend([f"UDP emisor {'activo' if red['activo'] else 'detenido'} | destino {red['destino'][0]}:{red['destino'][1]}",
+                f"Ultimo envio local: {red['ultimo_mensaje']} | mensajes={red['enviados']} errores={red['errores']}",
+                f"sendto no confirma recepcion en C6. {red['error']}"])
+        else:lineas.append('UDP: desactivado')
         # El panel no cubre la fotografía ni altera el sistema de coordenadas ROI.
         ancho_panel = max(960, imagen.shape[1])
         lienzo = np.zeros((imagen.shape[0] + ALTO_PANEL, ancho_panel, 3), np.uint8)
@@ -370,7 +376,7 @@ def main(argumentos=None):
     parser.add_argument("--url", help="IP o URL base; sobrescribe url_base sin modificar config.json")
     parser.add_argument("--pesos", type=Path, help="Archivo local YOLO11x; no se descarga automáticamente")
     parser.add_argument("--sin-ia", action="store_true", help="Iniciar conservando el visualizador sin inferencia")
-    parser.add_argument('--udp-config',type=Path,help='Activar servicio UDP con configuracion/clave locales')
+    parser.add_argument('--udp-config',type=Path,help='Configuracion local del emisor: activo, ip_destino, puerto')
     args = parser.parse_args(argumentos)
     adquisidor = None
     trabajador = None
@@ -392,14 +398,16 @@ def main(argumentos=None):
         interfaz = Visualizador(adquisidor, regiones, almacenamiento, ruta_roi, configuracion["intervalo_captura_s"],
                                trabajador, configuracion)
         if args.udp_config:
-            from servidor_udp import ServidorUDP,cargar_config_udp
+            from emisor_udp import EmisorUDP,cargar_config
+            config_udp=cargar_config(args.udp_config)
             esperados=dict(backend='pytorch',dispositivo='cpu',imgsz=960,confianza=.15,iou=.45,clases=[2,3,5,7],agnostic_nms=False,
                            hilos_cpu=0,hilos_interop=0,hilos_opencv=0)
-            if any(configuracion['detector'][k]!=v for k,v in esperados.items()) or configuracion['filtro_mediana'] or configuracion['calentamiento_inferencias']!=3:
+            if config_udp['activo'] and (any(configuracion['detector'][k]!=v for k,v in esperados.items()) or configuracion['filtro_mediana'] or configuracion['calentamiento_inferencias']!=3):
                 raise ValueError('UDP operativo requiere perfil YOLO11x CPU FP32 960/.15/.45, clases 2/3/5/7, NMS false, 3 calentamientos y filtro desactivado; revisar configuracion local.')
-            servicio_udp=ServidorUDP(cargar_config_udp(args.udp_config),interfaz.snapshot_udp)
-            interfaz.servicio_udp=servicio_udp
-            servicio_udp.start()
+            if config_udp['activo']:
+                servicio_udp=EmisorUDP(config_udp,interfaz.snapshot_udp)
+                interfaz.servicio_udp=servicio_udp
+                servicio_udp.start()
         print("Calibración: excluir convergencia y salida. Cambios de cámara/encuadre requieren recalibrar.")
         parametros = configuracion["detector"]
         print(f"Modelo local {Path(parametros['pesos']).name}; device={parametros['dispositivo']}; "
@@ -429,6 +437,7 @@ def main(argumentos=None):
             adquisidor.join()
         if trabajador is not None and trabajador.ident is not None:
             trabajador.join()  # La llamada PyTorch en curso termina; no se mata el hilo.
+
 
 
 if __name__ == "__main__":

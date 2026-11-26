@@ -1,9 +1,8 @@
 # Tarea 06 B: prioridad adaptativa con demanda simulada
 
-Para la próxima integración, ver el [contrato conectado propuesto](CONTRATO_CONECTADO07.md):
-edad de origen y transporte, observación frente a reenvío, sesiones/reinicios y
-salida controlada a rojos. Es diseño pendiente de implementar; esta demostración
-mantiene su algoritmo, límites, modos y tratamiento local de demanda.
+La prioridad de tarea06 se conserva sin cambios. Tarea07.2 agrega recepcion
+UDP ASCII en el tercer modo: [configuracion vigente](PROTOCOLO_UDP07.md).
+Las restricciones sin red de esta guia describen sus modos de demostracion.
 
 Se mantiene el mismo pinout **provisional** y una única tarea propietaria GPIO.
 No se habilitan salidas sin SEMAFORO_PINOUT_CONFIRMADO. No hay Wi-Fi, UDP ni

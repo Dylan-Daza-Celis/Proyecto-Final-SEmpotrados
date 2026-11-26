@@ -1,13 +1,13 @@
 #include "control_conectado.h"
-bool control_conectado_paso(control_conectado_t *g,controlador_semaforos_t *c,estado_red_t red,uint64_t ahora)
+bool control_conectado_paso(control_conectado_t *g,controlador_semaforos_t *c,estado_recepcion_t red,uint64_t ahora)
 {
-    bool vigente=red.asociado && red.valido && ahora<red.vence;
+    bool vigente=red.valido && ahora<red.vence;
     if(g->generacion!=red.generacion || !vigente) {
         if(g->generacion!=red.generacion)g->resultado=0;
         g->generacion=red.generacion;
         c->demanda.disponible=false;controlador_solicitar_seguro(c);
     }
-    bool rearmar=c->estado==ESTADO_SEGURO && vigente && red.reconocida==red.generacion && red.resultado!=g->resultado;
+    bool rearmar=c->estado==ESTADO_SEGURO && vigente && red.recuperable && red.atendida==red.generacion && red.resultado!=g->resultado;
     if(rearmar) {
         tiempos_semaforo_t tiempos=c->tiempos;parametros_prioridad_t parametros=c->prioridad;
         uint32_t edad=c->max_edad_demanda_ms;

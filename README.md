@@ -1,153 +1,65 @@
-# Semáforo inteligente — Sistemas Empotrados
+# Semaforo inteligente ? Sistemas Empotrados
 
-**Tarea 07:** integracion HTTP/UDP autenticada de vision y ESP32-C6 en
-`feat/integration-udp-07`. [Configuracion, protocolo y pruebas](Proyecto_Final_C6/PROTOCOLO_UDP07.md).
-El PC publica el ultimo resultado de YOLO11x y C6 decide prioridad/controla los
-GPIO. Incluye HMAC-SHA256, asociacion explicita, vencimiento desde origen HTTP,
-invalidacion retenida y recuperacion con captura posterior a confirmar ambos
-rojos. Los dos modos autonomos siguen disponibles; el conectado no usa simulador.
-
-Perfil operativo: YOLO11x original, CPU/PyTorch FP32, SVGA800x600, imgsz960,
-confianza **0.15**, IoU0.45, clases2/3/5/7, agnostic_nms=false, hilos de referencia,
-tres calentamientos y mediana desactivada. Configuracion local conservada.
-Las secciones siguientes resumen etapas anteriores; los resultados de esta
-integracion se registran en la guia del protocolo. Prueba fisica LAN/LED y
-exactitud con verdad manual pendientes; no se declara alcanzado el 90%.
-Validacion actual: 93 pruebas Python, pruebas C y loopback correctos; tres modos
-compilados con ESP-IDF v6.0.2/esp32c6; pip check correcto. Inferencia funcional
-real sobre imagen sintetica en FP32, sin medicion de exactitud fisica.
-
-Tarea 06 B: [prioridad adaptativa simulada](Proyecto_Final_C6/PRIORIDAD06.md), con
-verde 5..13 s congelado al entrar, alternancia obligatoria y cota nominal sin
-verde de 19 s. El diagnóstico neuronal continúa por separado en el PR #5.
-
-Tarea 05 B: [controlador ESP32-C6](Proyecto_Final_C6/README.md) con ciclo autónomo,
-GPIO centralizados, FreeRTOS, cola de demanda simulada y pruebas C sin placa.
-Compilación real ESP-IDF v6.0.2/esp32c6 correcta; cableado y prueba física pendientes.
-El bloque neuronal se revisaba por separado en el PR #5; tarea07 lo incorpora
-localmente junto a C6, sin fusionar los PR anteriores en GitHub.
-
-Tarea 06 A: [diagnóstico neuronal](Vision_Artificial/DIAGNOSTICO06.md), comparación
-entre versiones y umbrales sobre los mismos JPEG; 69 pruebas Python. Los cambios
-de prioridad C6 se revisan en una rama independiente, sin comunicación UDP.
-
-Tarea 05 A: [optimización y comparación de YOLO11x](Vision_Artificial/OPTIMIZACION.md).
-Se conservan pesos, SVGA y parámetros locales; PyTorch continúa como referencia.
-Benchmark reproducible de hilos/ONNX, calentamiento y 65 pruebas de visión. La
-selección de motor y su precisión final requieren escenas independientes anotadas.
-
-Proyecto final universitario sobre una maqueta de **45 × 44 cm** con intersección
-en Y. Dos entradas comparten una salida. La cantidad de vehículos de juguete en
-cada entrada determinará su prioridad; cada vehículo tiene el mismo peso.
-
-## Arquitectura prevista
+Maqueta de45 ?44cm con dos entradas que convergen en una salida. Cada carril
+usa LEDs rojo, amarillo y verde con resistencias individuales de330?.
 
 ```text
-ESP32-CAM / cámara -- imágenes por Wi-Fi --> Computadora
-                                             |
-                                  detector + ROI 1 / ROI 2
-                                             |
-                                        conteos UDP
-                                             v
-                                          ESP32-C6
-                                             |
-                                   estados + prioridad + 6 LEDs
+ESP32-CAM -- HTTP/JPEG --> PC (YOLO11x + ROI) -- UDP ASCII --> ESP32-C6
+                                                               |
+                                                    prioridad + estados + GPIO
 ```
 
-La computadora permanecerá conectada. Hará detección neuronal y conteo dentro de
-dos ROI: espera izquierda y derecha; convergencia y salida se excluyen. La lógica
-de circulación y el control de LEDs permanecerán en la C6.
+**Tarea07.2:** comunicacion unidireccional sencilla. El PC envia
+`secuencia,N1,N2,valido`; C6 recibe, valida y decide. Puerto inicial5005,
+timeout local5s. El protocolo anterior queda en el historial Git (ebe261a).
+La rama sigue siendo feat/integration-udp-07 y el trabajo se revisa en el PR8,
+sin fusionar PR anteriores ni modificar master o el firmware de CAM.
 
-`D = N1 - N2`: D ≥ 2 prioriza carril 1; D ≤ -2 prioriza carril 2; |D| < 2 produce
-alternancia. Los tiempos iniciales serán verde mínimo 5 s, máximo 13 s, amarillo
-2 s y rojo total 1 s, con espera máxima objetivo 20 s. Se deberá validar su
-coherencia y evitar esperas indefinidas. Nunca se permitirán ambos verdes; la
-pérdida de datos válidos llevará de forma controlada a ambos rojos.
+## Hardware, FreeRTOS y control
 
-## Hardware disponible
+[Guia C6 y cableado](Proyecto_Final_C6/README.md): una tarea propietaria GPIO,
+receptor UDP separado, eventos Wi-Fi y cola de ultimo valor. No hay control
+remoto directo de LEDs. Confirmar placa y esquema antes de habilitar GPIO;
+los GPIO10/11 provisionales pueden no estar expuestos en variantes SiP.
 
-- ESP32-CAM y base ESP32-CAM-MB USB-UART CH340G. Se había previsto una OV2640
-  de 2 MP; el registro UART aportado por el usuario identificó **OV3660**.
-- ESP32-C6 y una ESP32 clásica adicional para pruebas.
-- Computadora, soporte elevado fijo para cámara diagonal y vehículos de juguete.
-- Dos LEDs de cada color: rojo, amarillo y verde; seis resistencias de 330 Ω.
-- Maqueta en Y de 45 × 44 cm.
+Tres modos: convencional, adaptativo simulado y adaptativo conectado. El
+conectado inicia ambos rojos. Resultado invalido, timeout o perdida Wi-Fi inicia
+amarillo completo, rojo total y seguro. La invalidacion se retiene aunque llegue
+otro conteo. Se recupera desde seguro con una observacion nueva y rojo inicial.
 
-El registro confirma PSRAM física de 8 MiB, 4 MiB mapeados al heap y prueba de
-memoria correcta. El pinout AI Thinker permitió detectar e inicializar el sensor;
-el usuario confirmó después **19 capturas consecutivas** con memoria estable.
-Hubo dos avisos NO-SOI iniciales; la inspección visual de fotografías sigue pendiente.
+Prioridad: D=N1-N2, umbral2, verde5..13s e incremento2s por nivel; amarillo2s y
+rojo total1s. Alternancia obligatoria, duracion congelada al entrar. Nunca ambos
+verdes. Objetivo nominal sin verde20s, maximo nominal19s durante operacion
+continua. No se garantiza ese limite durante fallos, seguro o retrasos.
 
-## Proyectos y estado
+## Vision y configuracion
 
-| Carpeta | Target | Responsabilidad | Estado |
-| --- | --- | --- | --- |
-| `Proyecto_Final_Cam/` | `esp32` | Captura y envío HTTP de imágenes | 1.1 probada físicamente; 1.2/1.3 implementadas, validación física pendiente |
-| `Proyecto_Final_C6/` | `esp32c6` | Semáforos y decisiones | Ciclo fijo 5/2/1 s implementado y compilado; placa/pines y prueba física pendientes |
-| `Vision_Artificial/` | Python 3.11 en computadora | Cliente HTTP, YOLO11x y ocupación por ROI | Aplicación de visión probada por el usuario; integración 04 verificada con pruebas y JPEG local, evaluación de exactitud pendiente |
+[Guia Python](Vision_Artificial/README.md): YOLO11x original, PyTorch FP32 CPU,
+SVGA800x600, imgsz960, confianza0.15, IoU0.45, clases2/3/5/7, NMSfalse,
+tres calentamientos y hilos de referencia. Sin entrenamiento ni nuevo modelo.
 
-La **tarea 02 (prácticas 1.2/1.3)** añade estación Wi-Fi de 2.4 GHz y una página
-local con captura, descarga JPEG, vista continua, estado y controles validados.
-Se conserva el controlador de cámara y su configuración inicial; un mutex protege
-la captura, el envío y la reinicialización al cambiar resolución. Flash configurada
-para 4 MiB y PSRAM conservada. Credenciales únicamente en `menuconfig`/`sdkconfig`
-local ignorado. El servidor solo se inicia con IPv4 y se administra sin duplicados.
+YOLO reconoce y muestra cajas/confianzas/total aunque no haya ROI calibradas.
+Los conteos por carril y el envio de demanda valida requieren ambas ROI
+confirmadas y guardadas. Conserva invalidacion persistente y referencias de
+recalibracion. Configuraciones, fotografias, ROI y pesos locales se conservan.
 
-Para comenzar, abrir `Proyecto_Final_Cam` en VS Code y seguir su
-[guía de configuración y prueba](Proyecto_Final_Cam/README.md). Los resultados
-reales de compilación y el seguimiento de aceptación están en esa guía. La prueba
-Wi-Fi, HTTP, descarga y visualización física de la tarea 02 corresponde al usuario.
+[Configurar UDP PC -> C6](Proyecto_Final_C6/PROTOCOLO_UDP07.md): IP de C6 y puerto
+en udp.emisor.local.json; SSID y opcion de IP emisora en menuconfig C6. Solo LAN
+privada controlada. UDP no garantiza entrega, autenticacion ni antiguedad de un
+paquete en transito. El timeout mide tiempo local desde recepcion. sendto no
+confirma que C6 recibiera el mensaje.
 
-La **tarea 03 (práctica 1.4)** añade un cliente Python con OpenCV, NumPy y Requests,
-sin modificar el firmware. Un hilo consulta HTTP y conserva solo la última imagen;
-la ventana permite editar dos polígonos sobre una fotografía pausada y guardar
-JPEG originales con metadatos, sin anotaciones. El venv y las configuraciones son
-locales, separados de ESP-IDF. Ver [instalación y controles](Vision_Artificial/README.md).
-La carpeta vacía heredada `Vision Artificial/` se conserva sin cambios.
+## Validacion
 
-El usuario confirmó el funcionamiento de la aplicación y probó modelos
-preentrenados. La **tarea 04** integra definitivamente **YOLO11x en CPU**, con foto
-física **800 × 600** e inferencia inicial imgsz=960, confianza=0.15, IoU=0.45 y
-clases COCO 2/3/5/7. No reconfigura automáticamente la cámara. Se conserva el
-guardado de originales; dataset propio y entrenamiento se posponen.
+90 pruebas Python y cuatro grupos C correctos, ademas de UDP loopback.
+Tres modos compilados con ESP-IDF nativo v6.0.2/esp32c6 y configuraciones aisladas;
+programacion y prueba fisica desde VS Code a cargo del usuario. Verificar version
+efectiva antes de compilar. No Arduino ni PlatformIO; no cambiar instalacion.
 
-El conteo es ocupación instantánea (N1, N2, fuera, total y D), sin tracking ni
-acumulación. Un trabajador independiente procesa solo la foto pendiente más
-reciente y publica cajas/conteos unidos a esa misma imagen. ROI incoherentes,
-desconexión, fotos antiguas o errores invalidan el resultado; nunca equivalen a
-cero vehículos. Incluye mediana opcional de tres resultados y evaluación local.
+La exactitud vehicular y los tiempos fisicos de LAN/LED siguen pendientes. No
+hay anotaciones manuales locales para afirmar90% de escenas correctas. Los
+resultados historicos de diagnostico y evaluacion se conservan en sus guias.
 
-Seguimiento: **65 pruebas automatizadas correctas**; inferencia real con pesos
-locales sobre una imagen sintética y un JPEG local SVGA. En este último YOLO
-produjo cuatro predicciones car en unos 4.35 s; no son conteos reales verificados.
-La calibración local de referencia 320 × 240 se conserva y exige reconfirmar ambas
-ROI para SVGA. La meta de **90 % de escenas con ambos conteos correctos no está
-demostrada**. Ver [guía de ejecución/evaluación](Vision_Artificial/README.md) y
-[licencias de IA](Vision_Artificial/LICENCIAS_IA.md).
-
-## Etapas
-
-| Etapa | Trabajo |
-| --- | --- |
-| 1.1 | Inicialización y captura: usuario confirmó 19 imágenes y memoria estable |
-| 1.2–1.3 | Wi-Fi/HTTP e interfaz implementados; prueba física pendiente |
-| 1.4 | Cliente/visualizador confirmados por el usuario; controles de vigencia y ROI corregidos en 04 |
-| 2.1 | Dataset propio y entrenamiento pospuestos |
-| 2.2–2.3 | YOLO11x y conteo por ROI implementados; evaluación física de exactitud pendiente |
-| 3.1–3.4 | GPIO, estados, FreeRTOS y prioridad adaptativa simulada implementados; validación física pendiente |
-| 4.1–4.3 | UDP autenticado y modo seguro implementados; validacion fisica pendiente |
-| 5.1–5.2 | Experimentos, documentación y demostración |
-
-## Desarrollo
-
-Firmware en C con ESP-IDF nativo, VS Code y extensión oficial Espressif; sin
-Arduino ni PlatformIO. El entorno local declara ESP-IDF v6.0.2. Verificar con
-`idf.py --version` antes de compilar. Las rutas locales de `.vscode` no son
-obligatorias para otras máquinas y no se cambia la instalación del usuario.
-
-Seguir [AGENTS.md](AGENTS.md) y la [guía completa de cámara](Proyecto_Final_Cam/README.md).
-Usar ramas y PR; mientras una dependencia siga en un PR abierto, revisar los cambios
-nuevos contra esa rama para evitar duplicarlos. La integración final será hacia
-`master`, sin fusionar PR automáticamente. No versionar compilaciones, componentes
-descargados, venv, capturas, dataset real ni secretos. Conservar el bloqueo de
-dependencias generado por Component Manager.
+Camara: [configuracion y pruebas previas](Proyecto_Final_Cam/README.md).
+Licencia neuronal: [Ultralytics AGPL/Enterprise](Vision_Artificial/LICENCIAS_IA.md).
+Instrucciones de desarrollo: [AGENTS.md](AGENTS.md).

@@ -8,10 +8,18 @@
 #include "semaforo_gpio.h"
 #include "simulador_demanda.h"
 #include "control_conectado.h"
+#include "aplicacion_conectada.h"
 #include "wifi_manager.h"
 
 static const char *TAG="semaforos";
 static uint64_t ahora_ms(void) { return (uint64_t)esp_timer_get_time()/1000; }
+#ifdef CONFIG_SEMAFORO_CONECTADO
+static estado_recepcion_t leer_red(void *contexto) { (void)contexto;return receptor_udp_estado(); }
+static uint64_t reloj_control(void *contexto) { (void)contexto;return ahora_ms(); }
+static void invalidar_red(void *contexto) { (void)contexto;receptor_udp_invalidar(); }
+static bool escribir_fase(void *contexto,luces_semaforo_t luces)
+{ return semaforo_gpio_aplicar((semaforo_gpio_t *)contexto,luces); }
+#endif
 
 static void registrar_demanda(const controlador_semaforos_t *controlador, uint64_t ahora)
 {
@@ -71,11 +79,11 @@ static void tarea_controlador(void *parametro)
 #ifdef CONFIG_SEMAFORO_CONECTADO
     control_conectado_t guardia={0};
     controlador.estado=ESTADO_SEGURO;
-    if(!cliente_udp_iniciar(cola) || !wifi_manager_iniciar()) {
+    if(!receptor_udp_iniciar(cola) || !wifi_manager_iniciar()) {
         ESP_LOGE(TAG,"Configuracion/red no disponible; mantener rojos hasta corregir y reiniciar");
         semaforo_gpio_seguro(&gpio);vTaskDelete(NULL);return;
     }
-    ESP_LOGI(TAG,"Adaptativo CONECTADO: esperar asociacion y resultado posterior a barrera");
+    ESP_LOGI(TAG,"Adaptativo CONECTADO: esperar observacion nueva valida en ambos rojos");
 #endif
 #ifdef CONFIG_SEMAFORO_SIMULAR_DEMANDA
     if (!simulador_demanda_iniciar(cola)) {
@@ -98,33 +106,37 @@ static void tarea_controlador(void *parametro)
         estado_semaforo_t anterior=controlador.estado;
         uint64_t inicio_anterior=controlador.inicio_ms;
 #ifdef CONFIG_SEMAFORO_CONECTADO
-        estado_red_t estado_red=cliente_udp_estado();
-        if(estado_red.valido && ahora_ms()>=estado_red.vence)cliente_udp_invalidar_local();
-        bool cambio=control_conectado_paso(&guardia,&controlador,cliente_udp_estado(),ahora_ms());
+        estado_recepcion_t estado_red=receptor_udp_estado();
+        if(estado_red.valido && ahora_ms()>=estado_red.vence)receptor_udp_invalidar();
+        bool cambio=control_conectado_paso(&guardia,&controlador,receptor_udp_estado(),ahora_ms());
         if(anterior==ESTADO_SEGURO && controlador.estado==ROJO_TOTAL_INICIAL)
-            ESP_LOGI(TAG,"Recuperacion autorizada: nueva observacion posterior a barrera, rojo inicial completo");
+            ESP_LOGI(TAG,"Recuperacion desde seguro: nueva observacion valida recibida en seguro, rojo inicial completo");
 #else
         bool cambio=controlador_actualizar(&controlador,ahora_ms());
 #endif
         if (cambio) {
 #ifdef CONFIG_SEMAFORO_CONECTADO
-            if(controlador.estado==VERDE_CARRIL_1 || controlador.estado==VERDE_CARRIL_2) {
-                estado_red_t ultima=cliente_udp_estado();
-                if(!ultima.valido || ahora_ms()>=ultima.vence || ultima.generacion!=guardia.generacion) {
-                    controlador.estado=ESTADO_SEGURO;controlador.seguro_solicitado=true;
-                }
-            }
-#endif
+            uint64_t antes_gpio=ahora_ms();
+            informe_aplicacion_t informe;
+            operaciones_conectadas_t op={&gpio,leer_red,reloj_control,invalidar_red,escribir_fase};
+            bool aplicada_ok=aplicacion_conectada(&guardia,&controlador,op,&informe);
+#else
             luces_semaforo_t luces;
             uint64_t antes_gpio=ahora_ms();
-            if (!controlador_luces(controlador.estado,&luces) || !semaforo_gpio_aplicar(&gpio,luces)) {
+            bool aplicada_ok=controlador_luces(controlador.estado,&luces) && semaforo_gpio_aplicar(&gpio,luces);
+            if(aplicada_ok)controlador.inicio_ms=ahora_ms();
+#endif
+            if (!aplicada_ok) {
                 ESP_LOGE(TAG,"Fallo GPIO/estado: bloquear y pedir rojos");
                 semaforo_gpio_seguro(&gpio); controlador.estado=ESTADO_SEGURO; vTaskDelete(NULL); return;
             }
             uint64_t aplicada=ahora_ms();
-            controlador.inicio_ms=aplicada;
 #ifdef CONFIG_SEMAFORO_CONECTADO
-            control_conectado_fase_aplicada(&guardia,controlador.estado);
+            if(informe.interrumpido)ESP_LOGW(TAG,"Vigencia interrumpida al aplicar GPIO; verde aplicado=%u; despeje completo",(unsigned)informe.verde_aplicado);
+            if(informe.verde_aplicado && informe.interrumpido) {
+                unsigned carril=informe.estado_verde==VERDE_CARRIL_1 ? 0:1;
+                fin_verde[carril]=controlador.inicio_ms;tiene_fin[carril]=true;
+            }
 #endif
             ESP_LOGI(TAG,"%s -> %s duracion real fase=%"PRIu64" ms",
                 controlador_nombre(anterior),controlador_nombre(controlador.estado),aplicada-inicio_anterior);
@@ -148,7 +160,7 @@ static void tarea_controlador(void *parametro)
             }
         }
 #ifdef CONFIG_SEMAFORO_CONECTADO
-        cliente_udp_estado_controlador((uint8_t)controlador.estado,guardia.generacion);
+        receptor_udp_estado_controlador((uint8_t)controlador.estado,guardia.generacion);
 #endif
         vTaskDelay(pdMS_TO_TICKS(20));
     }

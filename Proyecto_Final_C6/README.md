@@ -1,16 +1,8 @@
-# ESP32-C6: demostracion autonoma y modo conectado
+# ESP32-C6: hardware, FreeRTOS y semaforos
 
-Tarea07: [protocolo, configuracion y validacion](PROTOCOLO_UDP07.md).
-Se agrega Wi-Fi STA y cliente UDP con HMAC-SHA256, asociacion y vencimiento de
-origen. El tercer modo conectado inicia seguro; ante perdida de datos termina
-amarillo/rojo y permanece en ambos rojos. Requiere reconocer la barrera y una
-captura posterior antes de rearmar. Solo el propietario existente controla GPIO.
-Las instrucciones de demostracion siguientes siguen vigentes para sus dos modos.
-
-ESP-IDF nativo v6.0.2, C y FreeRTOS. Conserva el modo convencional 5/2/1 s y añade
-[prioridad adaptativa simulada de tarea 06](PRIORIDAD06.md), verde 5..13 s con
-alternancia obligatoria y despejes completos. El inicio mantiene ambos rojos 1 s.
-Los modos autonomos no dependen de red ni YOLO. No cambia la camara.
+ESP-IDF nativo v6.0.2, C, targetesp32c6. Tres modos Kconfig: convencional,
+adaptativo simulado y adaptativo conectado. [Configurar UDP ASCII](PROTOCOLO_UDP07.md).
+El modo conectado recibe conteos del PC; nunca solicita ni confirma paquetes.
 
 ## Placa y cableado provisionales
 
@@ -85,26 +77,28 @@ El software no garantiza LEDs durante reset, arranque previo a app_main, pérdid
 de alimentación, cables rotos, cortocircuitos o transistores dañados. No se desactiva
 watchdog ni brownout. Esto es una maqueta educativa, con verificación física pendiente.
 
-## Demanda simulada
+## Demanda y prioridad
 
-Habilitar SEMAFORO_SIMULAR_DEMANDA en menuconfig para recorrer los escenarios reproducibles.
-La cola usa xQueueOverwrite y conserva solo el último valor. El propietario valida
-0..1000 vehículos, validez, secuencia estrictamente creciente y edad local ≤5 s,
-sin timestamps futuros. La secuencia no se reinicia durante el mismo arranque;
-antes de un futuro protocolo habrá que definir reinicios, sesiones y wrap-around.
-En modo convencional no alteran los tiempos; en adaptativo se usan solo al entrar
-al siguiente verde. El simulador actual recorre los escenarios de PRIORIDAD06.md,
-incluyendo invalidación y caducidad; sustituye la pareja constante de tarea 05.
+La cola FreeRTOS conserva un solo valor. En conectado, receptor_udp.c recibe y
+valida; demanda_conectada.c conserva secuencia, timeout local e invalidacion
+retenida. control_conectado.c dirige el despeje y rearme; aplicacion_conectada.c
+comprueba vigencia/generacion antes y despues de escribir GPIO. Estas tareas
+no comparten escrituras GPIO: solo main.c, el propietario, usa el driver.
 
-Modo actual: demostración autónoma, opera sin datos externos. El futuro modo
-conectado deberá detectar ausencia/caducidad y pedir la transición controlada a
-ambos rojos. La API lógica ya admite esa solicitud, pero no se implementa un
-receptor UDP ficticio ni se presenta este modo como conectado.
+D=N1-N2, umbral2, incremento2000ms, verdes5000..13000ms, amarillo2000ms y
+rojo total1000ms. Alternancia obligatoria; seleccionar verde una vez al entrar,
+sin extenderlo por paquetes nuevos. [Formula y escenarios](PRIORIDAD06.md).
 
-La tarea 06 define el intervalo sin verde desde el fin del verde propio hasta el
-siguiente inicio propio. Con verde máximo 13 s, la cota nominal es 19 s; 15 s
-produciría 21 s y se rechaza para objetivo 20 s. No es garantía física de tiempo
-real. Ver fórmula, validación, escenarios y pruebas en PRIORIDAD06.md.
+En conectado se inicia ESTADO_SEGURO con ambos rojos. Un conteo nuevo valido
+recibido desde seguro habilita rojo inicial completo y luego verde. Una
+invalidacion o caducidad fuerza despeje: amarillo completo, rojo total y seguro.
+Una observacion recibida durante ese despeje no permite rearmar: se necesita
+otra posterior al estado seguro. Fallo GPIO bloquea y no se recupera por UDP.
+
+Demostraciones sin red: en convencional los conteos no cambian tiempos; en
+adaptativo simulado se inyectan escenarios mediante otra tarea y cola. Sin
+demanda vigente usa minimo, sin fingir0/0 medidos. El simulador queda deshabilitado
+en conectado. La cota nominal sin verde es19s; no aplica a permanencia en seguro.
 
 ## Compilar y programar desde VS Code
 
@@ -124,54 +118,18 @@ diferir de la cámara. Salir del monitor con Ctrl+]. sdkconfig es local e ignora
 No ejecutar idf.py asociado a Node/Electron: usar el terminal oficial o su Python
 con el entorno IDF activado. No cambiar la instalación global para este proyecto.
 
-## Pruebas sin placa y comprobación física
+## Pruebas
 
-Las pruebas C compilan las mismas fuentes lógicas/GPIO y simulan las operaciones
-del driver. Requieren un compilador anfitrión C99 (GCC o TinyCC), distinto del
-compilador RISC-V que produce firmware para la placa:
+Ejecutar los cuatro grupos C de tests/ejecutar_host.ps1 con un compilador C99
+anfitrion. tests/pruebas_controlador.c y pruebas_prioridad.c se conservan;
+pruebas_udp.c cubre ASCII, secuencia, timeout, reinicio y recuperacion;
+pruebas_gpio_conectado.c inyecta fallos antes/durante GPIO y verifica despejes.
+Comandos y resultados en [la guia UDP](PROTOCOLO_UDP07.md).
 
-```powershell
-.\tests\ejecutar_host.ps1 -Compilador "RUTA_REAL\tcc.exe"
-```
+Son simulaciones y compilaciones, sin mediciones electricas. En placa comprobar
+pines, flash real de C6, polaridad, alimentacion, seis LEDs y varios ciclos. La
+confirmacion de pinout usada para compilar una variante de prueba no confirma
+ninguna placa ni autoriza flashearla sin revisar el esquema.
 
-Si la política local impide ejecutar scripts, compilar directamente sin cambiarla:
-
-```powershell
-gcc -std=c99 -Wall -Werror -Imain tests/pruebas_controlador.c main/controlador_semaforos.c main/semaforo_gpio.c main/prioridad_vehicular.c main/gestor_demanda.c -o pruebas.exe
-.\pruebas.exe
-gcc -std=c99 -Wall -Werror -Imain tests/pruebas_prioridad.c main/controlador_semaforos.c main/prioridad_vehicular.c main/gestor_demanda.c -o prioridad.exe
-.\prioridad.exe
-```
-
-Sustituir gcc por la ruta real del compilador anfitrión instalado. En esta sesión
-se usó TinyCC 0.9.27 portátil desde sus publicaciones oficiales, dentro de
-.herramientas/ ignorado; no se modificó ESP-IDF. Las pruebas se ejecutaron y
-terminaron correctamente. No se incluye el compilador ni ejecutables en Git.
-
-Cubren secuencia completa, límites temporales, una luz por carril, exclusión de
-verdes, retrasos grandes, reloj regresivo, estados/configuraciones inválidos,
-transición segura con amarillo/rojo completos, pines duplicados/reservados, cada
-fallo individual de escritura inicial/aplicación, habilitación fallida y validación
-de demanda. No verifican tensión ni niveles eléctricos ni el planificador real.
-
-Con placa confirmada: observar ambos rojos iniciales; medir varias vueltas de
-5/2/1 s por carril, verificar despejes y nunca ambos verdes; repetir con simulación
-activa y comprobar que no cambia el ciclo. Revisar logs y reset/alimentación.
-No provocar cortocircuitos para simular fallos: la inyección es por pruebas software.
-No se ha programado ni probado físicamente la placa en esta tarea.
-
-Validación real: idf.py --version informó v6.0.2; set-target esp32c6 y build
-terminaron correctamente. Pruebas C anfitrionas ejecutadas con éxito. La primera
-compilación dejó un binario de 0x26320 bytes, con 85 % de margen en la partición
-app por defecto. Se mantuvieron los valores de SDK para flash (2 MiB por defecto);
-confirmar también la capacidad física de la C6 antes de programar. No se trasladó
-la configuración de flash/PSRAM de la cámara a esta placa. Se ajustaron solo
-variables del proceso para localizar las herramientas ya instaladas por EIM;
-no se cambió la instalación global ni las políticas de ejecución del usuario.
-También se compiló una variante con controlador y simulador habilitados, usando
-sdkconfig y build separados bajo .herramientas/; la configuración normal sigue
-sin confirmar pines. Esa opción de compilación no confirma la placa física y sus
-binarios de prueba no deben programarse como sustituto de revisar el cableado.
-
-Fuentes oficiales: [GPIO C6 / restricciones de variantes](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32c6/api-reference/peripherals/gpio.html),
-[temporizador monotónico](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32c6/api-reference/system/esp_timer.html).
+Fuentes oficiales: [GPIO y variantes C6](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32c6/api-reference/peripherals/gpio.html),
+[FreeRTOS en ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32c6/api-reference/system/freertos_idf.html).

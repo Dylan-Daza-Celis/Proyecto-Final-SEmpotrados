@@ -28,3 +28,6 @@ clave_udp.hex
 .venv-opt/
 /exportados/
 /benchmarks/
+pesos.autorizados.local.json
+/mediciones/
+udp.emisor.local.json

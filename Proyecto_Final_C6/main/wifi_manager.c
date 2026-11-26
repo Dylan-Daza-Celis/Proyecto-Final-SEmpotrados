@@ -1,5 +1,5 @@
 #include "wifi_manager.h"
-#include "cliente_udp.h"
+#include "receptor_udp.h"
 #include "sdkconfig.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -17,10 +17,11 @@ static void eventos_red(void *arg,esp_event_base_t base,int32_t id,void *datos)
     (void)arg;
     if(base==IP_EVENT && id==IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ip=datos;
-        xEventGroupSetBits(eventos,1);ESP_LOGI("wifi_c6","IPv4 "IPSTR,IP2STR(&ip->ip_info.ip));
+        receptor_udp_conexion(true);xEventGroupSetBits(eventos,1);ESP_LOGI("wifi_c6","IPv4 "IPSTR,IP2STR(&ip->ip_info.ip));
     } else if((base==WIFI_EVENT && id==WIFI_EVENT_STA_DISCONNECTED) || (base==IP_EVENT && id==IP_EVENT_STA_LOST_IP)) {
-        xEventGroupClearBits(eventos,1);cliente_udp_invalidar_local();
+        xEventGroupClearBits(eventos,1);receptor_udp_conexion(false);
         ESP_LOGW("wifi_c6","Sin conectividad; demanda invalidada");
+
     }
 }
 static void reconectar(void *arg)

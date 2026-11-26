@@ -10,7 +10,7 @@ config SEMAFORO_CONVENCIONAL
 config SEMAFORO_ADAPTATIVO
     bool "Demostracion adaptativa con demanda simulada"
 config SEMAFORO_CONECTADO
-    bool "Adaptativo conectado por UDP autenticado"
+    bool "Adaptativo conectado por UDP ASCII"
 endchoice
 config SEMAFORO_SIMULAR_DEMANDA
     bool "Inyectar escenarios de demanda simulada"
@@ -63,41 +63,15 @@ config SEMAFORO_WIFI_SSID
 config SEMAFORO_WIFI_PASSWORD
     string "Contrasena Wi-Fi local"
     default ""
-config SEMAFORO_UDP_IP
-    string "IPv4 local de computadora"
-    default ""
-config SEMAFORO_UDP_EMISOR
-    string "Identidad publica emisor (32 hex de udp.local.json)"
-    default ""
-config SEMAFORO_UDP_CLAVE
-    string "Clave compartida local (64 hex; secreta)"
-    default ""
 config SEMAFORO_UDP_PUERTO
     int "Puerto UDP"
     range 1 65535
     default 5005
-config SEMAFORO_UDP_INTERVALO_MS
-    int "Intervalo solicitudes (ms)"
-    range 100 10000
-    default 1000
-config SEMAFORO_UDP_TIMEOUT_MS
-    int "Timeout respuesta (ms; menor que intervalo)"
-    range 50 1000
-    default 750
-config SEMAFORO_UDP_COMUNICACION_MS
-    int "Timeout comunicacion autenticada (ms)"
-    range 1000 30000
-    default 3000
-config SEMAFORO_UDP_EDAD_ORIGEN_MS
-    int "Presupuesto maximo de origen (ms)"
+config SEMAFORO_UDP_TIMEOUT_LOCAL_MS
+    int "Timeout local desde ultima observacion valida (ms)"
     range 100 60000
-    default 12000
-config SEMAFORO_UDP_VIGENCIA_MS
-    int "Vigencia local maxima desde aceptacion (ms)"
-    range 100 5000
     default 5000
-config SEMAFORO_UDP_MARGEN_MS
-    int "Margen reloj/redondeo (ms)"
-    range 1 1000
-    default 50
+config SEMAFORO_UDP_IP_EMISOR
+    string "IPv4 del emisor permitido (vacio acepta cualquier IP LAN)"
+    default ""
 endmenu
