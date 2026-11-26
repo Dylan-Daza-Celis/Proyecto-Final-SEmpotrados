@@ -7,6 +7,8 @@
 #include "controlador_semaforos.h"
 #include "semaforo_gpio.h"
 #include "simulador_demanda.h"
+#include "control_conectado.h"
+#include "wifi_manager.h"
 
 static const char *TAG="semaforos";
 static uint64_t ahora_ms(void) { return (uint64_t)esp_timer_get_time()/1000; }
@@ -19,7 +21,9 @@ static void registrar_demanda(const controlador_semaforos_t *controlador, uint64
             ESP_LOGI(TAG,"Demanda NO vigente; edad=%"PRIu64" ms seq=%"PRIu64"; sin medicion N1/N2",
                 ahora-gestor->ultima.recibida_ms,gestor->ultima_secuencia);
         else ESP_LOGI(TAG,"Demanda NO vigente; edad no disponible; sin medicion N1/N2");
+#ifndef CONFIG_SEMAFORO_CONECTADO
         ESP_LOGI(TAG,"Proxima seleccion sin demanda usa verde convencional; fase actual conserva duracion");
+#endif
         return;
     }
     ESP_LOGI(TAG,"N1=%"PRId32" N2=%"PRId32" D=%"PRId32" valida=1 edad=%"PRIu64" ms seq=%"PRIu64,
@@ -44,7 +48,7 @@ static void tarea_controlador(void *parametro)
         ESP_LOGE(TAG,"Tiempos invalidos"); semaforo_gpio_seguro(&gpio); vTaskDelete(NULL); return;
     }
     controlador.max_edad_demanda_ms=CONFIG_SEMAFORO_MAX_EDAD_DEMANDA_MS;
-#ifdef CONFIG_SEMAFORO_ADAPTATIVO
+#if defined(CONFIG_SEMAFORO_ADAPTATIVO) || defined(CONFIG_SEMAFORO_CONECTADO)
     parametros_prioridad_t parametros={CONFIG_SEMAFORO_VERDE_MIN_MS,CONFIG_SEMAFORO_VERDE_MAX_MS,
         CONFIG_SEMAFORO_AMARILLO_MS,CONFIG_SEMAFORO_ROJO_TOTAL_MS,CONFIG_SEMAFORO_UMBRAL,
         CONFIG_SEMAFORO_INCREMENTO_MS,CONFIG_SEMAFORO_OBJETIVO_SIN_VERDE_MS};
@@ -59,11 +63,20 @@ static void tarea_controlador(void *parametro)
         ESP_LOGE(TAG,"Tiempos convencionales incompatibles con objetivo nominal");
         semaforo_gpio_seguro(&gpio); vTaskDelete(NULL); return;
     }
-    ESP_LOGI(TAG,"Modo %s, inicio ambos rojos, sin UDP/Wi-Fi",controlador.adaptativo ? "ADAPTATIVO SIMULADO":"CONVENCIONAL");
+    ESP_LOGI(TAG,"Modo %s, inicio ambos rojos",controlador.adaptativo ? "ADAPTATIVO":"CONVENCIONAL");
     QueueHandle_t cola=xQueueCreate(1,sizeof(demanda_vehicular_t));
     if (!cola) {
         ESP_LOGE(TAG,"Fallo creando cola"); semaforo_gpio_seguro(&gpio); vTaskDelete(NULL); return;
     }
+#ifdef CONFIG_SEMAFORO_CONECTADO
+    control_conectado_t guardia={0};
+    controlador.estado=ESTADO_SEGURO;
+    if(!cliente_udp_iniciar(cola) || !wifi_manager_iniciar()) {
+        ESP_LOGE(TAG,"Configuracion/red no disponible; mantener rojos hasta corregir y reiniciar");
+        semaforo_gpio_seguro(&gpio);vTaskDelete(NULL);return;
+    }
+    ESP_LOGI(TAG,"Adaptativo CONECTADO: esperar asociacion y resultado posterior a barrera");
+#endif
 #ifdef CONFIG_SEMAFORO_SIMULAR_DEMANDA
     if (!simulador_demanda_iniciar(cola)) {
         ESP_LOGE(TAG,"Fallo simulador"); semaforo_gpio_seguro(&gpio);
@@ -72,6 +85,7 @@ static void tarea_controlador(void *parametro)
 #endif
     uint64_t fin_verde[2]={0}; bool tiene_fin[2]={false,false};
     for (;;) {
+#ifndef CONFIG_SEMAFORO_CONECTADO
         demanda_vehicular_t demanda;
         if (xQueueReceive(cola,&demanda,0)==pdPASS) {
             resultado_demanda_t resultado=controlador_recibir_demanda(&controlador,demanda,ahora_ms());
@@ -80,9 +94,27 @@ static void tarea_controlador(void *parametro)
                 resultado==DEMANDA_INVALIDACION_NUEVA ? "INVALIDACION NUEVA":"DUPLICADA/FUERA DE ORDEN");
             registrar_demanda(&controlador,ahora_ms());
         }
+#endif
         estado_semaforo_t anterior=controlador.estado;
         uint64_t inicio_anterior=controlador.inicio_ms;
-        if (controlador_actualizar(&controlador,ahora_ms())) {
+#ifdef CONFIG_SEMAFORO_CONECTADO
+        estado_red_t estado_red=cliente_udp_estado();
+        if(estado_red.valido && ahora_ms()>=estado_red.vence)cliente_udp_invalidar_local();
+        bool cambio=control_conectado_paso(&guardia,&controlador,cliente_udp_estado(),ahora_ms());
+        if(anterior==ESTADO_SEGURO && controlador.estado==ROJO_TOTAL_INICIAL)
+            ESP_LOGI(TAG,"Recuperacion autorizada: nueva observacion posterior a barrera, rojo inicial completo");
+#else
+        bool cambio=controlador_actualizar(&controlador,ahora_ms());
+#endif
+        if (cambio) {
+#ifdef CONFIG_SEMAFORO_CONECTADO
+            if(controlador.estado==VERDE_CARRIL_1 || controlador.estado==VERDE_CARRIL_2) {
+                estado_red_t ultima=cliente_udp_estado();
+                if(!ultima.valido || ahora_ms()>=ultima.vence || ultima.generacion!=guardia.generacion) {
+                    controlador.estado=ESTADO_SEGURO;controlador.seguro_solicitado=true;
+                }
+            }
+#endif
             luces_semaforo_t luces;
             uint64_t antes_gpio=ahora_ms();
             if (!controlador_luces(controlador.estado,&luces) || !semaforo_gpio_aplicar(&gpio,luces)) {
@@ -91,6 +123,9 @@ static void tarea_controlador(void *parametro)
             }
             uint64_t aplicada=ahora_ms();
             controlador.inicio_ms=aplicada;
+#ifdef CONFIG_SEMAFORO_CONECTADO
+            control_conectado_fase_aplicada(&guardia,controlador.estado);
+#endif
             ESP_LOGI(TAG,"%s -> %s duracion real fase=%"PRIu64" ms",
                 controlador_nombre(anterior),controlador_nombre(controlador.estado),aplicada-inicio_anterior);
             registrar_demanda(&controlador,aplicada);
@@ -112,6 +147,9 @@ static void tarea_controlador(void *parametro)
                 } else ESP_LOGI(TAG,"Carril %d sin intervalo previo medible",carril+1);
             }
         }
+#ifdef CONFIG_SEMAFORO_CONECTADO
+        cliente_udp_estado_controlador((uint8_t)controlador.estado,guardia.generacion);
+#endif
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

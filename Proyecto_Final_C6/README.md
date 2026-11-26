@@ -1,14 +1,16 @@
-# ESP32-C6: dos semáforos en demostración autónoma
+# ESP32-C6: demostracion autonoma y modo conectado
 
-Revisión para tarea 07: [diseño del modo conectado](CONTRATO_CONECTADO07.md).
-La vigencia futura deberá incluir edad de origen, transporte e identidad de
-resultado/sesión; los reenvíos no renovarán datos. El firmware actual sigue siendo
-demostración, sin UDP/Wi-Fi ni cambios al algoritmo adaptativo.
+Tarea07: [protocolo, configuracion y validacion](PROTOCOLO_UDP07.md).
+Se agrega Wi-Fi STA y cliente UDP con HMAC-SHA256, asociacion y vencimiento de
+origen. El tercer modo conectado inicia seguro; ante perdida de datos termina
+amarillo/rojo y permanece en ambos rojos. Requiere reconocer la barrera y una
+captura posterior antes de rearmar. Solo el propietario existente controla GPIO.
+Las instrucciones de demostracion siguientes siguen vigentes para sus dos modos.
 
 ESP-IDF nativo v6.0.2, C y FreeRTOS. Conserva el modo convencional 5/2/1 s y añade
 [prioridad adaptativa simulada de tarea 06](PRIORIDAD06.md), verde 5..13 s con
 alternancia obligatoria y despejes completos. El inicio mantiene ambos rojos 1 s.
-No hay UDP, Wi-Fi de C6 ni conexión a YOLO. No cambia la cámara.
+Los modos autonomos no dependen de red ni YOLO. No cambia la camara.
 
 ## Placa y cableado provisionales
 

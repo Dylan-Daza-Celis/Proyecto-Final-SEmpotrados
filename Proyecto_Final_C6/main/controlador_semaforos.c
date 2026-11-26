@@ -25,7 +25,7 @@ bool controlador_iniciar(controlador_semaforos_t *controlador, tiempos_semaforo_
 {
     if (!controlador) return false;
     *controlador=(controlador_semaforos_t){.estado=ESTADO_SEGURO,.tiempos=tiempos,.inicio_ms=ahora_ms,
-        .prioridad=prioridad_parametros_iniciales(),.max_edad_demanda_ms=5000};
+        .prioridad=prioridad_parametros_iniciales(),.max_edad_demanda_ms=5000,.carril_inicial=1};
     if (!tiempos.verde_1_ms || !tiempos.verde_2_ms || !tiempos.amarillo_ms || !tiempos.rojo_total_ms) return false;
     controlador->estado=ROJO_TOTAL_INICIAL;
     return true;
@@ -64,7 +64,7 @@ bool controlador_actualizar(controlador_semaforos_t *controlador, uint64_t ahora
     uint32_t duracion_ms;
     estado_semaforo_t siguiente;
     switch (controlador->estado) {
-        case ROJO_TOTAL_INICIAL: duracion_ms=controlador->tiempos.rojo_total_ms; siguiente=VERDE_CARRIL_1; break;
+        case ROJO_TOTAL_INICIAL: duracion_ms=controlador->tiempos.rojo_total_ms; siguiente=controlador->carril_inicial==2 ? VERDE_CARRIL_2:VERDE_CARRIL_1; break;
         case VERDE_CARRIL_1: duracion_ms=controlador->verde_seleccionado_ms; siguiente=AMARILLO_CARRIL_1; break;
         case AMARILLO_CARRIL_1: duracion_ms=controlador->tiempos.amarillo_ms; siguiente=ROJO_TOTAL_1_A_2; break;
         case ROJO_TOTAL_1_A_2: duracion_ms=controlador->tiempos.rojo_total_ms; siguiente=VERDE_CARRIL_2; break;

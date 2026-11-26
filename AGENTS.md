@@ -18,6 +18,23 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
 
 ## Reglas de desarrollo
 
+- Tarea actual07: rama `feat/integration-udp-07` desde C6 adaptativa `3ff0759`,
+  incorpora vision `352afcb`. No fusionar PR5/6/7 remotos ni modificar master/CAM.
+  Tres modos Kconfig independientes. Red STA/UDP solo en conectado; conservar
+  prioridad/alternancia/despejes y un propietario GPIO. Protocolo normativo en
+  `Proyecto_Final_C6/PROTOCOLO_UDP07.md`: HMAC-SHA256 oficial/estandar, nonce unico,
+  asociacion desafiada, sesiones retiradas, edad HTTP+RTT+margen, plazo fijo y
+  barrera retenida hasta ambos rojos. Recuperar solo con captura posterior al ACK
+  y rojo inicial completo; nunca rehabilitar un fallo GPIO mediante paquetes.
+  Cola ordinaria de ultimo valor y generacion critica separada. No publicar claves,
+  sdkconfig ni binarios con credenciales; no abrir firewall automaticamente.
+  Mantener YOLO11x/PyTorch FP32/CPU/SVGA800x600/imgsz960/conf.15/IoU.45/clases2,3,5,7/
+  NMSfalse, hilos de referencia, calentamiento3 y medianafalse. No exportar/entrenar.
+  Solo confianza local autorizada a .15 si fuese diferente; conservar demas datos.
+  ROI ordinaria exige referencia fresca actual antes de editar y revalidar Enter/G.
+  Conservar 76 pruebas previas, ejecutar nuevas Python/C, loopback identificado,
+  compilar tres modos v6.0.2/esp32c6, pip check/diff check. No inventar prueba fisica.
+
 - Firmware exclusivamente ESP-IDF nativo y C. No Arduino IDE, Arduino Framework,
   PlatformIO ni adaptación directa de ejemplos Arduino.
 - Entorno del usuario: VS Code con extensión oficial ESP-IDF de Espressif.
@@ -121,6 +138,20 @@ rojo, amarillo y verde, cada uno con resistencia individual de 330 Ω.
   medición0/0. Mantener modo convencional, GPIO corregido primero en PR #6 y un
   solo propietario. Sin UDP/Wi-Fi ni YOLO. Rama feat/c6-adaptive-traffic-priority
   contra feat/c6-traffic-light-controller, independiente de diagnóstico PR #5.
+
+- Tarea 05 A: optimizar YOLO11x sin cambiar pesos/imgsz/umbrales ni precisión
+  automáticamente. Warm-up sintético único, FP32, benchmark 3+20 y procesos
+  independientes para hilos/backend; verificar hilos y tensor efectivos. ONNX
+  dinámico conserva rectángulo LetterBox; OpenVINO requiere validación AMD/FP32.
+  Entorno opcional separado solo con instalación explícita. Mantener referencia
+  PyTorch y selección pendiente sin verdad final. S pausada guarda referencia
+  histórica sin validez de control. Rama feat/yolo11x-inference-optimization.
+- Tarea 06 A: diagnosticar pérdida reportada comparando cb305f7/75f1a0e/actual y
+  predict convencional sobre mismos JPEG/pesos/entorno; conservar PyTorch FP32.
+  Barrido A-E y NMS por separado, sin cambiar config local ni inventar verdad.
+  Preservar repeticiones por imagen y medir estabilidad; declarar variables de hilos.
+  Tras V exigir captura válida iniciada después, antes de congelar referencia ROI.
+  Desconexión/época nueva bloquea confirmación; ambas ROI y G siguen obligatorios.
 - Cámara inicial: pinout AI Thinker (confirmar placa física), JPEG QVGA 320 × 240,
   XCLK 20 MHz, calidad 12, un framebuffer en PSRAM, `CAMERA_GRAB_WHEN_EMPTY`,
   `LEDC_TIMER_0`, `LEDC_CHANNEL_0`, espera de 5000 ms con `vTaskDelay()`.

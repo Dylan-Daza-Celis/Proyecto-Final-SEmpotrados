@@ -1,4 +1,9 @@
-# Diseño para la próxima integración: resultados con origen, sesión y vencimiento
+# Contrato previo: resultados con origen, sesion y vencimiento
+
+**Actualizacion tarea 07:** esta propuesta historica ya tiene implementacion en
+la rama de integracion. El formato normativo, configuracion y pruebas estan en
+[PROTOCOLO_UDP07.md](PROTOCOLO_UDP07.md). Las referencias siguientes a trabajo
+futuro describen el estado del PR #7 antes de implementar red.
 
 Propuesta revisable para tarea 07. **No es un protocolo implementado ni probado
 en red**: no añade UDP/Wi-Fi, un receptor simulado ni un tercer modo al firmware.

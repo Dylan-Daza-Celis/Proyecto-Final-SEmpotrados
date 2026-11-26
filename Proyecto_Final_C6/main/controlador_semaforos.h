@@ -22,6 +22,7 @@ typedef struct {
     gestor_demanda_t demanda;
     demanda_vehicular_t demanda_aplicada;
     decision_prioridad_t decision;
+    unsigned carril_inicial;
 } controlador_semaforos_t;
 
 bool controlador_iniciar(controlador_semaforos_t *controlador, tiempos_semaforo_t tiempos, uint64_t ahora_ms);

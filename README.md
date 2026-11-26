@@ -1,5 +1,22 @@
 # Semáforo inteligente — Sistemas Empotrados
 
+**Tarea 07:** integracion HTTP/UDP autenticada de vision y ESP32-C6 en
+`feat/integration-udp-07`. [Configuracion, protocolo y pruebas](Proyecto_Final_C6/PROTOCOLO_UDP07.md).
+El PC publica el ultimo resultado de YOLO11x y C6 decide prioridad/controla los
+GPIO. Incluye HMAC-SHA256, asociacion explicita, vencimiento desde origen HTTP,
+invalidacion retenida y recuperacion con captura posterior a confirmar ambos
+rojos. Los dos modos autonomos siguen disponibles; el conectado no usa simulador.
+
+Perfil operativo: YOLO11x original, CPU/PyTorch FP32, SVGA800x600, imgsz960,
+confianza **0.15**, IoU0.45, clases2/3/5/7, agnostic_nms=false, hilos de referencia,
+tres calentamientos y mediana desactivada. Configuracion local conservada.
+Las secciones siguientes resumen etapas anteriores; los resultados de esta
+integracion se registran en la guia del protocolo. Prueba fisica LAN/LED y
+exactitud con verdad manual pendientes; no se declara alcanzado el 90%.
+Validacion actual: 93 pruebas Python, pruebas C y loopback correctos; tres modos
+compilados con ESP-IDF v6.0.2/esp32c6; pip check correcto. Inferencia funcional
+real sobre imagen sintetica en FP32, sin medicion de exactitud fisica.
+
 Tarea 06 B: [prioridad adaptativa simulada](Proyecto_Final_C6/PRIORIDAD06.md), con
 verde 5..13 s congelado al entrar, alternancia obligatoria y cota nominal sin
 verde de 19 s. El diagnóstico neuronal continúa por separado en el PR #5.
@@ -7,7 +24,17 @@ verde de 19 s. El diagnóstico neuronal continúa por separado en el PR #5.
 Tarea 05 B: [controlador ESP32-C6](Proyecto_Final_C6/README.md) con ciclo autónomo,
 GPIO centralizados, FreeRTOS, cola de demanda simulada y pruebas C sin placa.
 Compilación real ESP-IDF v6.0.2/esp32c6 correcta; cableado y prueba física pendientes.
-El bloque neuronal se revisa por separado en el PR #5; esta rama no lo incorpora.
+El bloque neuronal se revisaba por separado en el PR #5; tarea07 lo incorpora
+localmente junto a C6, sin fusionar los PR anteriores en GitHub.
+
+Tarea 06 A: [diagnóstico neuronal](Vision_Artificial/DIAGNOSTICO06.md), comparación
+entre versiones y umbrales sobre los mismos JPEG; 69 pruebas Python. Los cambios
+de prioridad C6 se revisan en una rama independiente, sin comunicación UDP.
+
+Tarea 05 A: [optimización y comparación de YOLO11x](Vision_Artificial/OPTIMIZACION.md).
+Se conservan pesos, SVGA y parámetros locales; PyTorch continúa como referencia.
+Benchmark reproducible de hilos/ONNX, calentamiento y 65 pruebas de visión. La
+selección de motor y su precisión final requieren escenas independientes anotadas.
 
 Proyecto final universitario sobre una maqueta de **45 × 44 cm** con intersección
 en Y. Dos entradas comparten una salida. La cantidad de vehículos de juguete en
@@ -90,7 +117,7 @@ reciente y publica cajas/conteos unidos a esa misma imagen. ROI incoherentes,
 desconexión, fotos antiguas o errores invalidan el resultado; nunca equivalen a
 cero vehículos. Incluye mediana opcional de tres resultados y evaluación local.
 
-Seguimiento: **60 pruebas automatizadas correctas**; inferencia real con pesos
+Seguimiento: **65 pruebas automatizadas correctas**; inferencia real con pesos
 locales sobre una imagen sintética y un JPEG local SVGA. En este último YOLO
 produjo cuatro predicciones car en unos 4.35 s; no son conteos reales verificados.
 La calibración local de referencia 320 × 240 se conserva y exige reconfirmar ambas
@@ -108,7 +135,7 @@ demostrada**. Ver [guía de ejecución/evaluación](Vision_Artificial/README.md)
 | 2.1 | Dataset propio y entrenamiento pospuestos |
 | 2.2–2.3 | YOLO11x y conteo por ROI implementados; evaluación física de exactitud pendiente |
 | 3.1–3.4 | GPIO, estados, FreeRTOS y prioridad adaptativa simulada implementados; validación física pendiente |
-| 4.1–4.3 | UDP, integración y validación de modo seguro |
+| 4.1–4.3 | UDP autenticado y modo seguro implementados; validacion fisica pendiente |
 | 5.1–5.2 | Experimentos, documentación y demostración |
 
 ## Desarrollo
