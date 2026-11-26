@@ -183,7 +183,7 @@ class PruebasRevision(unittest.TestCase):
         ahora = time.monotonic()
         regiones = regiones_svga()
         anterior = replace(captura_svga(), recibida_monotonic=ahora-2, iniciada_monotonic=ahora-13)
-        actual = captura_svga(2)
+        actual = replace(captura_svga(2), recibida_monotonic=ahora, iniciada_monotonic=ahora)
         resultado = ResultadoInferencia(anterior, 1, (), Conteo(0,0,0), Conteo(0,0,0),
             0, 4, ahora, 13, 'yolo11x.pt', (regiones.firma(), 0), 1)
         estado_ia = EstadoInferencia(resultado, '', '', None, 0, 0, 1)

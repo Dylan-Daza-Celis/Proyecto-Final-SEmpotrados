@@ -23,3 +23,11 @@ runs/
 /evaluaciones/
 .ultralytics/
 *.invalidada
+udp.local.json
+clave_udp.hex
+.venv-opt/
+/exportados/
+/benchmarks/
+pesos.autorizados.local.json
+/mediciones/
+udp.emisor.local.json

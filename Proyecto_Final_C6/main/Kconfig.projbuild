@@ -9,9 +9,12 @@ config SEMAFORO_CONVENCIONAL
     bool "Demostracion convencional"
 config SEMAFORO_ADAPTATIVO
     bool "Demostracion adaptativa con demanda simulada"
+config SEMAFORO_CONECTADO
+    bool "Adaptativo conectado por UDP ASCII"
 endchoice
 config SEMAFORO_SIMULAR_DEMANDA
     bool "Inyectar escenarios de demanda simulada"
+    depends on !SEMAFORO_CONECTADO
     default y if SEMAFORO_ADAPTATIVO
     default n
 config SEMAFORO_VERDE_1_MS
@@ -54,4 +57,21 @@ config SEMAFORO_ROJO_TOTAL_MS
     int "Rojo total (ms)"
     range 1000 10000
     default 1000
+config SEMAFORO_WIFI_SSID
+    string "SSID local 2.4 GHz (no versionar sdkconfig)"
+    default ""
+config SEMAFORO_WIFI_PASSWORD
+    string "Contrasena Wi-Fi local"
+    default ""
+config SEMAFORO_UDP_PUERTO
+    int "Puerto UDP"
+    range 1 65535
+    default 5005
+config SEMAFORO_UDP_TIMEOUT_LOCAL_MS
+    int "Timeout local desde ultima observacion valida (ms)"
+    range 100 60000
+    default 5000
+config SEMAFORO_UDP_IP_EMISOR
+    string "IPv4 del emisor permitido (vacio acepta cualquier IP LAN)"
+    default ""
 endmenu

@@ -2,6 +2,7 @@
 from dataclasses import dataclass, replace
 import threading
 import time
+import numpy as np
 
 from contador_vehiculos import Conteo, FiltroMediana, contar_vehiculos
 from detector_vehiculos import DetectorVehiculos
@@ -12,8 +13,8 @@ class ResultadoInferencia:
     captura: object
     secuencia: int
     detecciones: tuple
-    instantaneo: Conteo
-    filtrado: Conteo
+    instantaneo: Conteo | None
+    filtrado: Conteo | None
     muestras_validas: int
     inferencia_s: float
     finalizada_monotonic: float
@@ -24,11 +25,13 @@ class ResultadoInferencia:
 
     def a_dict(self, valido, motivo=""):
         """Estructura local para futura integración; no envía UDP ni otros mensajes."""
+        valido=bool(valido and self.instantaneo is not None)
         return {"valido": valido, "motivo": motivo, "secuencia": self.secuencia,
                 "identificador": self.captura.identificador, "fecha_utc": self.captura.fecha_utc,
                 "instantaneo": self.instantaneo.a_dict() if valido else None,
                 "filtrado": self.filtrado.a_dict() if valido else None,
-                "referencia_visual": self.instantaneo.a_dict(), "muestras_validas": self.muestras_validas if valido else 0,
+                "referencia_visual": self.instantaneo.a_dict() if self.instantaneo is not None else None,
+                "total_detecciones":len(self.detecciones),"muestras_validas": self.muestras_validas if valido else 0,
                 "inferencia_s": self.inferencia_s, "latencia_total_s": self.latencia_total_s,
                 "edad_al_utilizar_s": time.monotonic() - self.captura.origen_monotonic,
                 "referencia_temporal": "inicio de solicitud HTTP; no timestamp del sensor", "modelo": self.modelo}
@@ -43,10 +46,11 @@ class EstadoInferencia:
     omitidos: int
     frecuencia_hz: float
     generacion: int
+    fallos: int = 0
 
 
 class TrabajadorInferencia(threading.Thread):
-    def __init__(self, parametros, max_antiguedad_s=12.0, filtro=True, fabrica_detector=DetectorVehiculos):
+    def __init__(self, parametros, max_antiguedad_s=12.0, filtro=True, fabrica_detector=DetectorVehiculos, calentamiento=0):
         super().__init__(name="inferencia_yolo", daemon=False)
         self.parametros = dict(parametros)
         self.limite = max_antiguedad_s
@@ -67,12 +71,15 @@ class TrabajadorInferencia(threading.Thread):
         self._ultimo_fin = None
         self._filtro = FiltroMediana(filtro)
         self._tiempos_muestras = []
+        self._fallos = 0
+        self.calentamiento = calentamiento
+        self._preparando = bool(calentamiento)
+        self._no_antes = 0.0
+        self._fase_preparacion = 'CARGANDO MODELO'
 
     def _reiniciar_filtro(self):
         self._filtro.reiniciar()
         self._tiempos_muestras.clear()
-        self._ultimo_fin = None
-        self._frecuencia = 0.0
         if self._resultado is not None:
             # Una mediana publicada tampoco debe conservar muestras caducadas.
             self._resultado = replace(self._resultado, filtrado=self._resultado.instantaneo, muestras_validas=0)
@@ -85,12 +92,16 @@ class TrabajadorInferencia(threading.Thread):
                     self._omitidos += 1
                 self._pendiente = None
                 self._reiniciar_filtro()
+                self._ultimo_fin = None
+                self._frecuencia = 0.0
             self._suspendido = True
             self._motivo = motivo
 
     def enviar(self, captura, secuencia, regiones, epoca=0):
         contexto = (regiones.firma(), epoca)
         with self._condicion:
+            if captura.origen_monotonic < self._no_antes:
+                return False
             if contexto != self._contexto or self._suspendido:
                 self._generacion += 1
                 self._contexto = contexto
@@ -99,6 +110,8 @@ class TrabajadorInferencia(threading.Thread):
                 self._pendiente = None
                 self._suspendido = False
                 self._reiniciar_filtro()
+                self._ultimo_fin = None
+                self._frecuencia = 0.0
                 self._motivo = "Inferencia pendiente"
             if secuencia <= self._ultima_secuencia or self.detener.is_set():
                 return False
@@ -113,10 +126,10 @@ class TrabajadorInferencia(threading.Thread):
 
     def obtener_estado(self):
         with self._condicion:
-            if any(time.monotonic() - t > self.limite for t in self._tiempos_muestras):
+            if self._filtro.habilitado and any(time.monotonic() - t > self.limite for t in self._tiempos_muestras):
                 self._reiniciar_filtro()
-            return EstadoInferencia(self._resultado, self._error, self._motivo,
-                                    self._procesando, self._omitidos, self._frecuencia, self._generacion)
+            return EstadoInferencia(self._resultado, self._error, self._fase_preparacion if self._preparando else self._motivo,
+                                    self._procesando, self._omitidos, self._frecuencia, self._generacion, self._fallos)
 
     def cerrar(self):
         self.detener.set()
@@ -127,10 +140,24 @@ class TrabajadorInferencia(threading.Thread):
     def run(self):
         try:
             detector = self.fabrica_detector(self.parametros)  # Una sola carga, dentro del trabajador.
+            if self.calentamiento:
+                with self._condicion:
+                    self._fase_preparacion = 'CALENTANDO MODELO'
+                detector.calentar(self.calentamiento, self.detener)
+                with self._condicion:
+                    self._no_antes = time.monotonic()
+                    if self._pendiente is not None:
+                        self._omitidos += 1
+                    self._pendiente = None
+                    self._motivo = 'Inferencia pendiente: esperando captura posterior al calentamiento'
+            with self._condicion:
+                self._preparando = False
         except Exception as error:
             with self._condicion:
                 self._error = f"Error al cargar modelo: {error}"
+                self._fallos += 1
                 self._motivo = "Error de inferencia"
+                self._preparando = False
             return
         while not self.detener.is_set():
             with self._condicion:
@@ -148,7 +175,8 @@ class TrabajadorInferencia(threading.Thread):
                 if resolucion != (800, 600):
                     raise ValueError("Configurar SVGA 800x600 desde la interfaz web")
                 detecciones, segundos = detector.detectar(captura.imagen)
-                conteo = contar_vehiculos(detecciones, regiones, resolucion)
+                # YOLO reconoce aunque falten ROI. El conteo operativo exige calibracion.
+                conteo = None if regiones.estado_calibracion(resolucion) else contar_vehiculos(detecciones, regiones, resolucion)
                 final = time.monotonic()
                 with self._condicion:
                     self._procesando = None
@@ -156,30 +184,36 @@ class TrabajadorInferencia(threading.Thread):
                         self._omitidos += 1
                         continue
                     if final - captura.origen_monotonic > self.limite:
+                        self._fallos += 1
                         self._motivo = "Resultado neuronal antiguo"
                         self._reiniciar_filtro()
                         continue
-                    if any(final - t > self.limite for t in self._tiempos_muestras):
+                    if self._filtro.habilitado and any(final - t > self.limite for t in self._tiempos_muestras):
                         self._reiniciar_filtro()
-                    filtrado, muestras = self._filtro.agregar(secuencia, conteo)
-                    self._tiempos_muestras = (self._tiempos_muestras + [captura.origen_monotonic])[-3:]
+                    if conteo is None:
+                        self._reiniciar_filtro();filtrado=None;muestras=0
+                    else:
+                        filtrado,muestras=self._filtro.agregar(secuencia,conteo)
+                    if self._filtro.habilitado and conteo is not None:
+                        self._tiempos_muestras = (self._tiempos_muestras + [captura.origen_monotonic])[-3:]
                     self._frecuencia = 0.0 if self._ultimo_fin is None else 1 / max(final - self._ultimo_fin, 1e-6)
                     self._ultimo_fin = final
                     self._resultado = ResultadoInferencia(captura, secuencia, detecciones, conteo, filtrado,
                         muestras, segundos, final, final - captura.origen_monotonic,
-                        str(self.parametros["pesos"]), contexto, generacion)
+                        self.parametros.get('backend', 'pytorch') + ': ' + str(self.parametros["pesos"]), contexto, generacion)
                     self._error = ""
                     self._motivo = ""
             except Exception as error:
                 with self._condicion:
                     self._procesando = None
                     if generacion == self._generacion:
+                        self._fallos += 1
                         self._error = f"Error de inferencia: {error}"
                         self._motivo = "Error de inferencia"
                         self._reiniciar_filtro()
 
 
-def motivo_entrada(estado, captura_actual, regiones, max_imagen_s, pausado=False, activado=True, ahora=None):
+def motivo_deteccion(estado,captura_actual,max_imagen_s,pausado=False,activado=True,ahora=None):
     from camera_client import captura_vigente
     ahora = time.monotonic() if ahora is None else ahora
     if not activado:
@@ -197,10 +231,27 @@ def motivo_entrada(estado, captura_actual, regiones, max_imagen_s, pausado=False
     resolucion = (captura_actual.imagen.shape[1], captura_actual.imagen.shape[0])
     if resolucion != (800, 600):
         return "Configurar SVGA 800x600 desde la interfaz web"
-    motivo = regiones.estado_calibracion(resolucion)
-    if motivo:
-        return motivo
     return ""
+
+
+def motivo_entrada(estado, captura_actual, regiones, max_imagen_s, pausado=False, activado=True, ahora=None):
+    """Entrada OPERATIVA: deteccion disponible y ademas ambas ROI validas."""
+    motivo=motivo_deteccion(estado,captura_actual,max_imagen_s,pausado,activado,ahora)
+    if motivo:return motivo
+    return regiones.estado_calibracion((captura_actual.imagen.shape[1],captura_actual.imagen.shape[0]))
+
+
+def motivo_diagnostico(estado,captura_actual,estado_ia,max_imagen_s,max_resultado_s,pausado=False,activado=True,ahora=None):
+    ahora=time.monotonic() if ahora is None else ahora
+    motivo=motivo_deteccion(estado,captura_actual,max_imagen_s,pausado,activado,ahora)
+    if motivo:return motivo
+    if estado_ia.error:return estado_ia.error
+    resultado=estado_ia.resultado
+    if resultado is None:return estado_ia.motivo or 'Esperando reconocimiento'
+    if resultado.generacion!=estado_ia.generacion or resultado.contexto[1]!=estado.epoca:
+        return 'Reconocimiento pendiente: contexto cambiado'
+    if not 0<=ahora-resultado.captura.origen_monotonic<=max_resultado_s:return 'Reconocimiento antiguo'
+    return estado_ia.motivo
 
 
 def motivo_resultado(estado, captura_actual, regiones, estado_ia, max_imagen_s, max_resultado_s,
@@ -222,4 +273,5 @@ def motivo_resultado(estado, captura_actual, regiones, estado_ia, max_imagen_s, 
         return "Resultado neuronal antiguo"
     if estado_ia.motivo:
         return estado_ia.motivo
+    if resultado.instantaneo is None:return 'Calibracion pendiente; solo reconocimiento diagnostico'
     return ""

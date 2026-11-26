@@ -1,8 +1,35 @@
-# Tarea 04 — YOLO11x y ocupación vehicular por ROI
+# Vision artificial — YOLO11x y ocupacion vehicular por ROI
+
+Tarea07.2: emisor UDP opcional PC -> C6, formato `secuencia,N1,N2,valido`.
+Usa el resultado existente, sin otro modelo ni inferencias duplicadas.
+[Configuracion sencilla y pruebas](../Proyecto_Final_C6/PROTOCOLO_UDP07.md).
+UDP se activa con `--udp-config udp.emisor.local.json` (activo/IPdestino/puerto).
+
+YOLO11x sigue reconociendo con ROI pendientes: muestra cajas, confianza y total.
+Los conteos por carril y el envio valido requieren ambas ROI confirmadas y
+guardadas. La ventana distingue reconocimiento, calibracion y conteo operativo.
+Se conservan controles, invalidacion persistente y referencias Enter/G.
+Perfil operativo: YOLO11x original/CPU/PyTorch FP32, SVGA800x600/imgsz960,
+confianza0.15/IoU0.45/NMSfalse/clases2,3,5,7, tres calentamientos y hilos de referencia.
+No se sobrescribe config.json ni se requiere archivo de autenticacion.
+
+Revisión para tarea 07: guardado G revalidado, centros flotantes compartidos entre
+contador/diagnóstico y escenas finales excluidas del barrido. 76 pruebas correctas.
+La prueba real de candidato B requiere anotaciones manuales todavía pendientes;
+ver [procedimiento y resultados](DIAGNOSTICO06.md).
+
+La [tarea 06 A](DIAGNOSTICO06.md) incorpora diagnóstico visual offline y comparación
+cb305f7/75f1a0e/actual/predict convencional, barrido A–E, estabilidad por repetición
+y referencia ROI posterior a V. 69 pruebas correctas. No se declara corregida una
+pérdida de precisión sin verdad manual y escenas que la reproduzcan.
+
+La [tarea 05 A](OPTIMIZACION.md) añade benchmark sostenido, calentamiento inicial,
+hilos configurables y motores CPU FP32. PyTorch sigue como referencia; 65 pruebas
+automatizadas. S admite referencias históricas pausadas, sin habilitar control.
 
 Aplicación Windows/Python que conserva cliente HTTP, visualizador, calibración y
 guardado de originales de la tarea 03. Añade YOLO11x preentrenado y conteo de
-**ocupación en cada fotografía**, sin tracking, entrenamiento ni UDP.
+**ocupación en cada fotografía**, sin tracking ni entrenamiento. UDP es opcional con emisor_udp.py.
 Los firmware de cámara y C6 permanecen sin cambios.
 
 ## Entorno y modelo elegido
@@ -339,7 +366,7 @@ en vivo. La frecuencia es fotos válidas / duración total del recorrido local.
 
 Verificación del **25 de noviembre de 2026**:
 
-- **60 pruebas correctas**, incluidas las 51 de la tarea 04. Las nuevas usan detecciones
+- **65 pruebas correctas**, incluidas las 60 de la revisión 04.1. Las nuevas usan detecciones
   simuladas y no necesitan PyTorch, Ultralytics, red ni descargar YOLO11x.
 - Cobertura de centros, clases/confianza, ocupación y fuera, cero válido, ROI
   inválidas/pendientes, error neuronal, edad, desconexión, cambio de contexto

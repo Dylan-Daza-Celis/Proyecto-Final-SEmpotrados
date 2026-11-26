@@ -24,18 +24,24 @@ class Conteo:
         return asdict(self) | {"n_total": self.n_total, "diferencia": self.diferencia}
 
 
+def asignar_roi(deteccion, regiones, resolucion):
+    """Una única pertenencia, usando el centro flotante original, incluido el borde."""
+    deteccion.validar(resolucion)
+    primero = regiones.contiene_punto(1, deteccion.centro, resolucion)
+    segundo = regiones.contiene_punto(2, deteccion.centro, resolucion)
+    if primero and segundo:
+        raise ErrorDeteccion("Centro asignado a dos ROI: calibración ambigua.")
+    return 'ROI1' if primero else 'ROI2' if segundo else 'FUERA'
+
+
 def contar_vehiculos(detecciones, regiones, resolucion):
     motivo = regiones.estado_calibracion(resolucion)
     if motivo:
         raise ValueError(motivo)
     cantidades = [0, 0, 0]
     for deteccion in detecciones:
-        deteccion.validar(resolucion)
-        primero = regiones.contiene_punto(1, deteccion.centro, resolucion)
-        segundo = regiones.contiene_punto(2, deteccion.centro, resolucion)
-        if primero and segundo:
-            raise ErrorDeteccion("Centro asignado a dos ROI: calibración ambigua.")
-        cantidades[0 if primero else 1 if segundo else 2] += 1
+        categoria = asignar_roi(deteccion, regiones, resolucion)
+        cantidades[{'ROI1':0,'ROI2':1,'FUERA':2}[categoria]] += 1
     return Conteo(*cantidades)
 
 
